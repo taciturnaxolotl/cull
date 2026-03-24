@@ -119,11 +119,13 @@ struct QualityAnalyzer {
         /// Sharpness of the best face region (Laplacian variance on face crop)
         let sharpness: Double?
         let regions: [CGRect]
+        /// Per-face Eye Aspect Ratio, parallel to regions (0 = closed, ~0.3 = wide open)
+        let eyeAspectRatios: [Double]
     }
 
     static func analyzeFaces(imageURL: URL) async -> FaceResult {
         guard let (source, imageIndex) = sourceForAnalysis(imageURL) else {
-            return FaceResult(sharpness: nil, regions: [])
+            return FaceResult(sharpness: nil, regions: [], eyeAspectRatios: [])
         }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
@@ -132,15 +134,16 @@ struct QualityAnalyzer {
             kCGImageSourceCreateThumbnailWithTransform: true
         ]
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, imageIndex, options as CFDictionary) else {
-            return FaceResult(sharpness: nil, regions: [])
+            return FaceResult(sharpness: nil, regions: [], eyeAspectRatios: [])
         }
 
-        let request = VNDetectFaceCaptureQualityRequest()
+        let qualityRequest = VNDetectFaceCaptureQualityRequest()
+        let landmarksRequest = VNDetectFaceLandmarksRequest()
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        try? handler.perform([request])
+        try? handler.perform([qualityRequest, landmarksRequest])
 
-        guard let results = request.results, !results.isEmpty else {
-            return FaceResult(sharpness: nil, regions: [])
+        guard let results = qualityRequest.results, !results.isEmpty else {
+            return FaceResult(sharpness: nil, regions: [], eyeAspectRatios: [])
         }
 
         // Filter out small background faces and low-confidence detections
@@ -151,7 +154,7 @@ struct QualityAnalyzer {
         }
 
         guard !meaningful.isEmpty else {
-            return FaceResult(sharpness: nil, regions: [])
+            return FaceResult(sharpness: nil, regions: [], eyeAspectRatios: [])
         }
 
         // Sort faces by size (largest first) for better cycling order
@@ -159,12 +162,29 @@ struct QualityAnalyzer {
             .map(\.boundingBox)
             .sorted { $0.width * $0.height > $1.width * $1.height }
 
+        // Build per-face EAR map keyed by bounding box
+        var earByBox: [CGRect: Double] = [:]
+        if let landmarkResults = landmarksRequest.results {
+            for face in landmarkResults {
+                if let landmarks = face.landmarks {
+                    let leftEAR = eyeAspectRatio(landmarks.leftEye)
+                    let rightEAR = eyeAspectRatio(landmarks.rightEye)
+                    if let l = leftEAR, let r = rightEAR {
+                        earByBox[face.boundingBox] = (l + r) / 2.0
+                    }
+                }
+            }
+        }
+
+        // Map to sorted regions order
+        let eyeAspectRatios = regions.map { box in
+            earByBox.first { closeEnough($0.key, box) }?.value ?? 0.3
+        }
+
         // Measure sharpness directly on the largest face crop
-        // This is what actually matters — is the face in focus?
         let bestFaceRect = regions[0]
         let imageW = CGFloat(cgImage.width)
         let imageH = CGFloat(cgImage.height)
-        // Vision rect (bottom-left origin) → pixel rect (top-left origin), padded 20%
         let padX = bestFaceRect.width * 0.2
         let padY = bestFaceRect.height * 0.2
         let pixelRect = CGRect(
@@ -180,7 +200,46 @@ struct QualityAnalyzer {
             faceSharpness = laplacianVariance(faceCrop)
         }
 
-        return FaceResult(sharpness: faceSharpness, regions: regions)
+        return FaceResult(sharpness: faceSharpness, regions: regions, eyeAspectRatios: eyeAspectRatios)
+    }
+
+    /// Bounding boxes from different Vision requests may differ slightly
+    private static func closeEnough(_ a: CGRect, _ b: CGRect) -> Bool {
+        abs(a.origin.x - b.origin.x) < 0.01 &&
+        abs(a.origin.y - b.origin.y) < 0.01 &&
+        abs(a.width - b.width) < 0.01 &&
+        abs(a.height - b.height) < 0.01
+    }
+
+    /// Eye Aspect Ratio (EAR) from Vision landmark points.
+    /// Uses vertical vs horizontal distances to detect closed eyes.
+    /// Returns nil if landmarks are unavailable.
+    private static func eyeAspectRatio(_ eye: VNFaceLandmarkRegion2D?) -> Double? {
+        guard let eye, eye.pointCount >= 6 else { return nil }
+        let pts = eye.normalizedPoints
+        // Vision eye landmarks: roughly ordered as outer corner, top points, inner corner, bottom points
+        // For 6-point eyes: 0=outer, 1=top-outer, 2=top-inner, 3=inner, 4=bottom-inner, 5=bottom-outer
+        // For 8-point eyes: 0=outer, 1=top-outer, 2=top, 3=top-inner, 4=inner, 5=bottom-inner, 6=bottom, 7=bottom-outer
+        let count = eye.pointCount
+        if count == 6 {
+            let vertical1 = distance(pts[1], pts[5])
+            let vertical2 = distance(pts[2], pts[4])
+            let horizontal = distance(pts[0], pts[3])
+            guard horizontal > 0 else { return nil }
+            return Double((vertical1 + vertical2) / (2.0 * horizontal))
+        } else if count >= 8 {
+            let vertical1 = distance(pts[1], pts[7])
+            let vertical2 = distance(pts[2], pts[6])
+            let vertical3 = distance(pts[3], pts[5])
+            let horizontal = distance(pts[0], pts[4])
+            guard horizontal > 0 else { return nil }
+            return Double((vertical1 + vertical2 + vertical3) / (3.0 * horizontal))
+        }
+        return nil
+    }
+
+    private static func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        hypot(a.x - b.x, a.y - b.y)
     }
 
     static func analyze(photo: Photo) async {
@@ -193,6 +252,7 @@ struct QualityAnalyzer {
             photo.blurScore = blurResult
             photo.faceSharpness = faceResult.sharpness
             photo.faceRegions = faceResult.regions
+            photo.eyeAspectRatios = faceResult.eyeAspectRatios
         }
     }
 }

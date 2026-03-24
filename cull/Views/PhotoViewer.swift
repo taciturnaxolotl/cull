@@ -120,6 +120,17 @@ struct PhotoViewer: View {
                         }
                         .font(.caption)
 
+                        // Eyes closed badge
+                        if photo.eyeAspectRatios.contains(where: { $0 < 0.20 }) {
+                            let closedCount = photo.eyeAspectRatios.filter { $0 < 0.20 }.count
+                            HStack(spacing: 3) {
+                                Image(systemName: "eye.slash")
+                                Text("\(closedCount)")
+                            }
+                            .foregroundStyle(.yellow)
+                            .font(.caption)
+                        }
+
                         // Blur badge
                         if isPhotoBlurry(photo) {
                             Label("Blurry", systemImage: "eye.slash.fill")
@@ -286,16 +297,20 @@ struct PhotoViewer: View {
             return ZoomInfo(scale: 2.5, offset: .zero)
         }
 
-        guard photo.faceRegions.indices.contains(zoomIndex) else {
-            return ZoomInfo(scale: 1, offset: .zero)
+        // Zoomed to a face — adapt to current photo's faces
+        guard !photo.faceRegions.isEmpty else {
+            // No faces on this photo — fall back to center zoom
+            return ZoomInfo(scale: 2.5, offset: .zero)
         }
 
-        let faceRect = photo.faceRegions[zoomIndex]
+        // Clamp to available faces
+        let clampedIndex = min(zoomIndex, photo.faceRegions.count - 1)
+        let faceRect = photo.faceRegions[clampedIndex]
         // Vision coordinates: origin bottom-left, normalized 0-1
         // Calculate scale so the face takes up ~35% of the view width
         let faceW = faceRect.width
         let faceH = faceRect.height
-        let scale = min(0.35 / max(faceW, faceH), 5.0)
+        let scale = min(max(0.35 / max(faceW, faceH), 1.5), 5.0)
 
         // Face center in normalized image coords (flip Y)
         let faceCenterX = faceRect.midX
@@ -316,6 +331,55 @@ struct PhotoViewer: View {
         return ZoomInfo(scale: scale, offset: CGSize(width: offsetX, height: offsetY))
     }
 
+    // MARK: - Eye indicator
+
+    /// Draws two small eye shapes that reflect how open/closed the eyes are.
+    /// EAR ~0.30 = wide open, ~0.20 = threshold, ~0.05 = shut.
+    private struct EyeIndicator: View {
+        let ear: Double
+        let faceWidth: CGFloat
+
+        var body: some View {
+            let eyeW = min(faceWidth * 0.22, 20)
+            // Map EAR to openness: 0.05→flat, 0.30→full open
+            let openness = CGFloat(max(0, min(1, (ear - 0.05) / 0.25)))
+            let eyeH = eyeW * 0.8 * openness
+            let color: Color = ear < 0.20 ? .yellow : .white.opacity(0.7)
+
+            EyeShape(openness: openness)
+                .fill(color.opacity(0.9))
+                .frame(width: eyeW, height: max(eyeH, 1.5))
+                .shadow(color: .black.opacity(0.8), radius: 1.5)
+        }
+    }
+
+    /// Almond-shaped eye that flattens as openness approaches 0.
+    private struct EyeShape: Shape {
+        let openness: CGFloat
+
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+            let midY = rect.midY
+            let bulge = rect.height / 2
+            let cpInset = rect.width * 0.2
+
+            // Top lid arc (cubic for rounder shape)
+            path.move(to: CGPoint(x: rect.minX, y: midY))
+            path.addCurve(
+                to: CGPoint(x: rect.maxX, y: midY),
+                control1: CGPoint(x: rect.minX + cpInset, y: midY - bulge),
+                control2: CGPoint(x: rect.maxX - cpInset, y: midY - bulge)
+            )
+            // Bottom lid arc
+            path.addCurve(
+                to: CGPoint(x: rect.minX, y: midY),
+                control1: CGPoint(x: rect.maxX - cpInset, y: midY + bulge),
+                control2: CGPoint(x: rect.minX + cpInset, y: midY + bulge)
+            )
+            return path
+        }
+    }
+
     private func fittedSize(image: CGSize, in container: CGSize) -> CGSize {
         let scaleW = container.width / image.width
         let scaleH = container.height / image.height
@@ -329,16 +393,24 @@ struct PhotoViewer: View {
     private func faceOverlays(photo: Photo, fittedSize: CGSize) -> some View {
         ForEach(0..<photo.faceRegions.count, id: \.self) { i in
             let faceRect = photo.faceRegions[i]
+            let ear = i < photo.eyeAspectRatios.count ? photo.eyeAspectRatios[i] : 0.3
+            let isClosed = ear < 0.20
             // Convert Vision rect (bottom-left origin) to SwiftUI overlay coords (top-left origin)
             let x = faceRect.origin.x * fittedSize.width
             let y = (1 - faceRect.origin.y - faceRect.height) * fittedSize.height
             let w = faceRect.width * fittedSize.width
             let h = faceRect.height * fittedSize.height
 
-            RoundedRectangle(cornerRadius: 3)
-                .strokeBorder(Color.white.opacity(0.5), lineWidth: 1.5)
-                .frame(width: w, height: h)
-                .position(x: x + w / 2, y: y + h / 2)
+            ZStack {
+                RoundedRectangle(cornerRadius: 3)
+                    .strokeBorder(isClosed ? Color.yellow.opacity(0.8) : Color.white.opacity(0.5), lineWidth: 1.5)
+                    .frame(width: w, height: h)
+
+                // Eye openness indicator just under the chin
+                EyeIndicator(ear: ear, faceWidth: w)
+                    .offset(y: h * 0.55)
+            }
+            .position(x: x + w / 2, y: y + h / 2)
         }
     }
 }

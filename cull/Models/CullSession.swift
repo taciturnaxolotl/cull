@@ -84,7 +84,6 @@ final class CullSession {
 
     func moveToNextGroup() {
         guard !groups.isEmpty else { return }
-        resetZoom()
         saveCursorPosition()
         let start = selectedGroupIndex
         for offset in 1...groups.count {
@@ -99,7 +98,6 @@ final class CullSession {
 
     func moveToPreviousGroup() {
         guard !groups.isEmpty else { return }
-        resetZoom()
         saveCursorPosition()
         let start = selectedGroupIndex
         for offset in 1...groups.count {
@@ -114,7 +112,6 @@ final class CullSession {
 
     func moveToNextPhoto() {
         guard let group = selectedGroup else { return }
-        resetZoom()
         // Try to find next visible photo in current group
         for i in (selectedPhotoIndex + 1)..<group.photos.count {
             if !isPhotoFiltered(group.photos[i]) {
@@ -128,7 +125,6 @@ final class CullSession {
 
     func moveToPreviousPhoto() {
         guard let group = selectedGroup else { return }
-        resetZoom()
         // Try to find previous visible photo in current group
         for i in stride(from: selectedPhotoIndex - 1, through: 0, by: -1) {
             if !isPhotoFiltered(group.photos[i]) {
@@ -151,7 +147,6 @@ final class CullSession {
 
     func selectGroup(at index: Int) {
         guard groups.indices.contains(index) else { return }
-        resetZoom()
         saveCursorPosition()
         selectedGroupIndex = index
         restoreCursorPosition()
@@ -159,7 +154,6 @@ final class CullSession {
 
     func selectPhoto(at index: Int) {
         guard let group = selectedGroup, group.photos.indices.contains(index) else { return }
-        resetZoom()
         selectedPhotoIndex = index
     }
 
@@ -389,6 +383,7 @@ final class CullSession {
             photo.pairedPixelHeight = saved.pairedPixelHeight
             photo.pairedFileSize = saved.pairedFileSize
             photo.captureDate = saved.captureDate
+            photo.eyeAspectRatios = saved.eyeAspectRatios
             photosByPath[saved.path] = photo
         }
 

@@ -69,8 +69,14 @@ private struct PhotoThumbnail: View {
                                 .font(.caption)
                         }
                         Spacer()
+                        // Eyes closed badge
+                        if photo.eyeAspectRatios.contains(where: { $0 < 0.20 }) {
+                            Image(systemName: "eye.slash")
+                                .foregroundStyle(.yellow)
+                                .font(.caption)
+                        }
                         // Blur badge — hybrid: trust face quality for bokeh shots
-                        if isPhotoBlurry() {
+                        else if isPhotoBlurry() {
                             Image(systemName: "eye.slash.fill")
                                 .foregroundStyle(.orange)
                                 .font(.caption)

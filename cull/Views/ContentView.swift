@@ -37,6 +37,10 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showExport)) { _ in
             showExportSheet = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: .reimport)) { _ in
+            guard let folder = session.sourceFolder else { return }
+            startReanalyze(folder)
+        }
         .onAppear {
             session.undoManager = windowUndoManager
         }
@@ -230,6 +234,130 @@ struct ContentView: View {
         }
     }
 
+    @MainActor
+    private func startReanalyze(_ url: URL) {
+        session.isImporting = true
+        session.importProgress = 0.02
+        cache.clearCache()
+
+        // Snapshot existing ratings/flags keyed by relative path
+        let existingState: [String: (rating: Int, flag: PhotoFlag)] = {
+            var map: [String: (Int, PhotoFlag)] = [:]
+            for photo in session.allPhotos {
+                let rel = photo.url.relativePath(from: url)
+                map[rel] = (photo.rating, photo.flag)
+            }
+            return map
+        }()
+
+        let s = session
+        let c = cache
+
+        Task {
+            do {
+                // Phase 1: Full re-scan and metadata read
+                await MainActor.run { s.importStatus = "Scanning photos..." }
+                let result = try await PhotoImporter.importFolder(url, recursive: s.importRecursive)
+
+                // Restore ratings/flags from previous state
+                for photo in result.photos {
+                    let rel = photo.url.relativePath(from: url)
+                    if let saved = existingState[rel] {
+                        photo.rating = saved.rating
+                        photo.flag = saved.flag
+                    }
+                }
+
+                // Phase 2: Re-group (0-20%)
+                await MainActor.run { s.importStatus = "Grouping similar shots..." }
+                var lastReported = 0.0
+                let groups = await ShotGrouper.group(photos: result.photos) { p in
+                    let mapped = p * 0.20
+                    guard mapped - lastReported > 0.01 else { return }
+                    lastReported = mapped
+                    await MainActor.run {
+                        withAnimation(.linear(duration: 0.3)) {
+                            s.importProgress = mapped
+                        }
+                    }
+                }
+
+                // Phase 3: Analysis + Thumbnails + Previews in parallel (20-100%)
+                let allPhotos = groups.flatMap(\.photos)
+                await MainActor.run { s.importStatus = "Analyzing & loading..." }
+
+                let totalPhotos = Double(allPhotos.count)
+                nonisolated(unsafe) var analysisProgress = 0.0
+                nonisolated(unsafe) var thumbProgress = 0.0
+                nonisolated(unsafe) var previewProgress = 0.0
+
+                @Sendable func reportProgress() async {
+                    let combined = 0.20 + (analysisProgress * 0.40 + thumbProgress * 0.35 + previewProgress * 0.25) * 0.80
+                    await MainActor.run {
+                        withAnimation(.linear(duration: 0.2)) {
+                            s.importProgress = combined
+                        }
+                    }
+                }
+
+                await withTaskGroup(of: Void.self) { parallelGroup in
+                    parallelGroup.addTask {
+                        var completed = 0.0
+                        for batchStart in stride(from: 0, to: allPhotos.count, by: 8) {
+                            let batch = Array(allPhotos[batchStart..<min(batchStart + 8, allPhotos.count)])
+                            await withTaskGroup(of: Void.self) { group in
+                                for photo in batch {
+                                    group.addTask(priority: .background) {
+                                        await QualityAnalyzer.analyze(photo: photo)
+                                    }
+                                }
+                            }
+                            completed += Double(batch.count)
+                            analysisProgress = completed / totalPhotos
+                            await reportProgress()
+                        }
+                    }
+
+                    parallelGroup.addTask {
+                        await c.preloadAllThumbnails(photos: allPhotos) { p in
+                            thumbProgress = p
+                            await reportProgress()
+                        }
+                    }
+
+                    parallelGroup.addTask {
+                        let ahead = Array(allPhotos.prefix(30))
+                        let behind = Array(allPhotos.suffix(30))
+                        let initialPreviews = ahead + behind.reversed()
+                        await c.preloadAllPreviews(photos: initialPreviews) { p in
+                            previewProgress = p
+                            await reportProgress()
+                        }
+                    }
+                }
+
+                // Rank photos within each group
+                for group in groups {
+                    let scored = group.photos.map { (photo: $0, score: Self.qualityScore($0, in: group)) }
+                    group.photos = scored.sorted { $0.score > $1.score }.map(\.photo)
+                }
+
+                await MainActor.run {
+                    s.importProgress = 1.0
+                    s.groups = groups
+                    s.selectedGroupIndex = 0
+                    s.selectedPhotoIndex = 0
+                    s.isImporting = false
+                    s.saveWorkspace()
+                }
+            } catch {
+                await MainActor.run {
+                    s.isImporting = false
+                }
+            }
+        }
+    }
+
     private var cullingView: some View {
         HStack(spacing: 0) {
             // Left: Groups column
@@ -357,19 +485,28 @@ extension ContentView {
     /// Without faces: global blur score relative to group peers.
     static func qualityScore(_ photo: Photo, in group: PhotoGroup) -> Double {
         let peers = group.photos
+        var score: Double
 
         if let faceSharp = photo.faceSharpness, !photo.faceRegions.isEmpty {
             // Face detected — use face-region sharpness (Laplacian on face crop).
             // Normalize relative to peers who also have faces.
             let peerFaceScores = peers.compactMap(\.faceSharpness)
             if let maxF = peerFaceScores.max(), let minF = peerFaceScores.min(), maxF > minF {
-                return (faceSharp - minF) / (maxF - minF)
+                score = (faceSharp - minF) / (maxF - minF)
+            } else {
+                score = 0.5
             }
-            return 0.5
         } else {
             // No faces — use global blur score
-            return normalizedBlur(photo, peers: peers)
+            score = normalizedBlur(photo, peers: peers)
         }
+
+        // Penalize photos with closed eyes
+        if photo.eyeAspectRatios.contains(where: { $0 < 0.20 }) {
+            score *= 0.3
+        }
+
+        return score
     }
 
     /// Normalize blur score relative to group peers (0-1 range)

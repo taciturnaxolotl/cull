@@ -28,6 +28,11 @@ struct CullApp: App {
                 .keyboardShortcut("e")
                 .disabled(session.groups.isEmpty)
 
+                Button("Reanalyze Photos") {
+                    NotificationCenter.default.post(name: .reimport, object: nil)
+                }
+                .disabled(session.sourceFolder == nil || session.isImporting)
+
                 Divider()
 
                 Button("Close Folder") {
@@ -126,4 +131,5 @@ struct CullApp: App {
 extension Notification.Name {
     static let openFolder = Notification.Name("openFolder")
     static let showExport = Notification.Name("showExport")
+    static let reimport = Notification.Name("reimport")
 }

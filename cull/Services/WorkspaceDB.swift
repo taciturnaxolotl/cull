@@ -17,6 +17,7 @@ final class WorkspaceDB: @unchecked Sendable {
         exec("PRAGMA synchronous=NORMAL")
 
         createTables()
+        migrate()
     }
 
     deinit {
@@ -42,7 +43,8 @@ final class WorkspaceDB: @unchecked Sendable {
                 paired_pixel_height INTEGER DEFAULT 0,
                 paired_file_size INTEGER DEFAULT 0,
                 capture_date REAL,
-                group_id TEXT
+                group_id TEXT,
+                eye_aspect_ratios TEXT
             )
         """)
 
@@ -61,6 +63,11 @@ final class WorkspaceDB: @unchecked Sendable {
         """)
     }
 
+    private func migrate() {
+        // Add eye_aspect_ratios column if missing (added in v2)
+        exec("ALTER TABLE photos ADD COLUMN eye_aspect_ratios TEXT")
+    }
+
     // MARK: - Save
 
     func savePhotos(_ photos: [Photo], sourceFolder: URL) {
@@ -69,8 +76,9 @@ final class WorkspaceDB: @unchecked Sendable {
             INSERT OR REPLACE INTO photos
             (path, paired_path, rating, flag, blur_score, face_sharpness, face_regions,
              pixel_width, pixel_height, file_size,
-             paired_pixel_width, paired_pixel_height, paired_file_size, capture_date, group_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             paired_pixel_width, paired_pixel_height, paired_file_size, capture_date, group_id,
+             eye_aspect_ratios)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """)
         defer { sqlite3_finalize(stmt) }
 
@@ -96,6 +104,7 @@ final class WorkspaceDB: @unchecked Sendable {
             bind(stmt, 13, photo.pairedFileSize)
             bind(stmt, 14, photo.captureDate?.timeIntervalSinceReferenceDate)
             bind(stmt, 15, nil as String?) // group_id set separately
+            bind(stmt, 16, encodeDoubles(photo.eyeAspectRatios))
             sqlite3_step(stmt)
         }
         exec("COMMIT")
@@ -172,6 +181,7 @@ final class WorkspaceDB: @unchecked Sendable {
         let pairedFileSize: Int64
         let captureDate: Date?
         let groupID: String?
+        let eyeAspectRatios: [Double]
     }
 
     func loadPhotos() -> [SavedPhoto] {
@@ -195,6 +205,7 @@ final class WorkspaceDB: @unchecked Sendable {
             let pairedFileSize = sqlite3_column_int64(stmt, 12)
             let captureDateInterval = getOptionalDouble(stmt, 13)
             let groupID = getString(stmt, 14)
+            let earJSON = getString(stmt, 15)
 
             results.append(SavedPhoto(
                 path: path,
@@ -211,7 +222,8 @@ final class WorkspaceDB: @unchecked Sendable {
                 pairedPixelHeight: pairedPixelHeight,
                 pairedFileSize: pairedFileSize,
                 captureDate: captureDateInterval.map { Date(timeIntervalSinceReferenceDate: $0) },
-                groupID: groupID
+                groupID: groupID,
+                eyeAspectRatios: decodeDoubles(earJSON)
             ))
         }
         return results
@@ -323,6 +335,16 @@ final class WorkspaceDB: @unchecked Sendable {
         let arrays = regions.map { [Double($0.origin.x), Double($0.origin.y), Double($0.width), Double($0.height)] }
         guard let data = try? JSONSerialization.data(withJSONObject: arrays) else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+
+    private func encodeDoubles(_ values: [Double]) -> String? {
+        guard !values.isEmpty else { return nil }
+        return values.map { String(format: "%.3f", $0) }.joined(separator: ",")
+    }
+
+    private func decodeDoubles(_ str: String?) -> [Double] {
+        guard let str, !str.isEmpty else { return [] }
+        return str.split(separator: ",").compactMap { Double($0) }
     }
 
     private func decodeRegions(_ json: String?) -> [CGRect] {
