@@ -89,13 +89,14 @@ struct QualityAnalyzer {
     }
 
     struct FaceResult {
-        let quality: Double?
+        /// Sharpness of the best face region (Laplacian variance on face crop)
+        let sharpness: Double?
         let regions: [CGRect]
     }
 
     static func analyzeFaces(imageURL: URL) async -> FaceResult {
         guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, nil) else {
-            return FaceResult(quality: nil, regions: [])
+            return FaceResult(sharpness: nil, regions: [])
         }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
@@ -104,7 +105,7 @@ struct QualityAnalyzer {
             kCGImageSourceCreateThumbnailWithTransform: true
         ]
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
-            return FaceResult(quality: nil, regions: [])
+            return FaceResult(sharpness: nil, regions: [])
         }
 
         let request = VNDetectFaceCaptureQualityRequest()
@@ -112,26 +113,47 @@ struct QualityAnalyzer {
         try? handler.perform([request])
 
         guard let results = request.results, !results.isEmpty else {
-            return FaceResult(quality: nil, regions: [])
+            return FaceResult(sharpness: nil, regions: [])
         }
 
         // Filter out small background faces and low-confidence detections
         let meaningful = results.filter { face in
             let area = face.boundingBox.width * face.boundingBox.height
-            // Must be at least 1.5% of image area and have decent confidence
             guard area >= 0.015, face.confidence >= 0.5 else { return false }
-            // Skip very low quality faces (blurry background people)
-            if let q = face.faceCaptureQuality, q < 0.15 { return false }
             return true
         }
 
-        let quality = meaningful.map { Double($0.faceCaptureQuality ?? 0) }.max()
+        guard !meaningful.isEmpty else {
+            return FaceResult(sharpness: nil, regions: [])
+        }
+
         // Sort faces by size (largest first) for better cycling order
         let regions = meaningful
             .map(\.boundingBox)
             .sorted { $0.width * $0.height > $1.width * $1.height }
 
-        return FaceResult(quality: quality, regions: regions)
+        // Measure sharpness directly on the largest face crop
+        // This is what actually matters — is the face in focus?
+        let bestFaceRect = regions[0]
+        let imageW = CGFloat(cgImage.width)
+        let imageH = CGFloat(cgImage.height)
+        // Vision rect (bottom-left origin) → pixel rect (top-left origin), padded 20%
+        let padX = bestFaceRect.width * 0.2
+        let padY = bestFaceRect.height * 0.2
+        let pixelRect = CGRect(
+            x: (bestFaceRect.origin.x - padX) * imageW,
+            y: (1 - bestFaceRect.origin.y - bestFaceRect.height - padY) * imageH,
+            width: (bestFaceRect.width + padX * 2) * imageW,
+            height: (bestFaceRect.height + padY * 2) * imageH
+        ).intersection(CGRect(x: 0, y: 0, width: imageW, height: imageH))
+
+        var faceSharpness: Double? = nil
+        if pixelRect.width > 10, pixelRect.height > 10,
+           let faceCrop = cgImage.cropping(to: pixelRect) {
+            faceSharpness = laplacianVariance(faceCrop)
+        }
+
+        return FaceResult(sharpness: faceSharpness, regions: regions)
     }
 
     static func analyze(photo: Photo) async {
@@ -142,7 +164,7 @@ struct QualityAnalyzer {
         let (blurResult, faceResult) = await (blur, faces)
         await MainActor.run {
             photo.blurScore = blurResult
-            photo.faceQualityScore = faceResult.quality
+            photo.faceSharpness = faceResult.sharpness
             photo.faceRegions = faceResult.regions
         }
     }

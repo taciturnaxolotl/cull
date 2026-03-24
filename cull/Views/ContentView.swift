@@ -71,66 +71,69 @@ struct ContentView: View {
                     }
                 }
 
-                // Phase 2: Quality analysis — blur + faces (20-50%)
-                await MainActor.run { s.importStatus = "Analyzing sharpness & faces..." }
+                // Phase 2: Analysis + Thumbnails + Previews in parallel (20-100%)
                 let allPhotos = groups.flatMap(\.photos)
-                let totalPhotos = Double(allPhotos.count)
-                var analysisCompleted = 0.0
-                for batchStart in stride(from: 0, to: allPhotos.count, by: 4) {
-                    let batch = Array(allPhotos[batchStart..<min(batchStart + 4, allPhotos.count)])
-                    await withTaskGroup(of: Void.self) { group in
-                        for photo in batch {
-                            group.addTask {
-                                let url = photo.pairedURL ?? photo.url
-                                let blur = await QualityAnalyzer.analyzeBlur(imageURL: url)
-                                let faces = await QualityAnalyzer.analyzeFaces(imageURL: url)
-                                await MainActor.run {
-                                    photo.blurScore = blur
-                                    photo.faceQualityScore = faces.quality
-                                    photo.faceRegions = faces.regions
+                await MainActor.run { s.importStatus = "Analyzing & loading..." }
 
-                                }
-                            }
-                        }
-                    }
-                    analysisCompleted += Double(batch.count)
-                    let mapped = 0.20 + (analysisCompleted / totalPhotos) * 0.30
+                // Track progress from three parallel streams
+                let totalPhotos = Double(allPhotos.count)
+                // Each stream contributes a fraction: analysis 40%, thumbnails 35%, previews 25%
+                nonisolated(unsafe) var analysisProgress = 0.0
+                nonisolated(unsafe) var thumbProgress = 0.0
+                nonisolated(unsafe) var previewProgress = 0.0
+
+                @Sendable func reportProgress() async {
+                    let combined = 0.20 + (analysisProgress * 0.40 + thumbProgress * 0.35 + previewProgress * 0.25) * 0.80
                     await MainActor.run {
                         withAnimation(.linear(duration: 0.2)) {
-                            s.importProgress = mapped
+                            s.importProgress = combined
                         }
                     }
                 }
 
-                // Rank photos within each group — best first
+                await withTaskGroup(of: Void.self) { parallelGroup in
+                    // Stream 1: Quality analysis (blur + faces)
+                    parallelGroup.addTask {
+                        var completed = 0.0
+                        for batchStart in stride(from: 0, to: allPhotos.count, by: 8) {
+                            let batch = Array(allPhotos[batchStart..<min(batchStart + 8, allPhotos.count)])
+                            await withTaskGroup(of: Void.self) { group in
+                                for photo in batch {
+                                    group.addTask {
+                                        await QualityAnalyzer.analyze(photo: photo)
+                                    }
+                                }
+                            }
+                            completed += Double(batch.count)
+                            analysisProgress = completed / totalPhotos
+                            await reportProgress()
+                        }
+                    }
+
+                    // Stream 2: Thumbnails
+                    parallelGroup.addTask {
+                        await c.preloadAllThumbnails(photos: allPhotos) { p in
+                            thumbProgress = p
+                            await reportProgress()
+                        }
+                    }
+
+                    // Stream 3: Initial full-res previews
+                    parallelGroup.addTask {
+                        let ahead = Array(allPhotos.prefix(30))
+                        let behind = Array(allPhotos.suffix(30))
+                        let initialPreviews = ahead + behind.reversed()
+                        await c.preloadAllPreviews(photos: initialPreviews) { p in
+                            previewProgress = p
+                            await reportProgress()
+                        }
+                    }
+                }
+
+                // Rank photos within each group — best first (after analysis completes)
                 for group in groups {
                     let scored = group.photos.map { (photo: $0, score: Self.qualityScore($0, in: group)) }
                     group.photos = scored.sorted { $0.score > $1.score }.map(\.photo)
-                }
-
-                // Phase 3: Thumbnails (50-75%)
-                await MainActor.run { s.importStatus = "Generating thumbnails..." }
-                await c.preloadAllThumbnails(photos: allPhotos) { p in
-                    let mapped = 0.50 + p * 0.25
-                    await MainActor.run {
-                        withAnimation(.linear(duration: 0.2)) {
-                            s.importProgress = mapped
-                        }
-                    }
-                }
-
-                // Phase 4: Initial full-res previews (75-100%)
-                await MainActor.run { s.importStatus = "Loading previews..." }
-                let ahead = Array(allPhotos.prefix(30))
-                let behind = Array(allPhotos.suffix(30))
-                let initialPreviews = ahead + behind.reversed()
-                await c.preloadAllPreviews(photos: initialPreviews) { p in
-                    let mapped = 0.75 + p * 0.25
-                    await MainActor.run {
-                        withAnimation(.linear(duration: 0.2)) {
-                            s.importProgress = mapped
-                        }
-                    }
                 }
 
                 await MainActor.run {
@@ -261,31 +264,31 @@ struct ContentView: View {
 
 extension ContentView {
     /// Quality score for ranking within a group. Higher = better.
+    /// With faces: face sharpness (Laplacian on face crop) is the score.
+    /// Without faces: global blur score relative to group peers.
     static func qualityScore(_ photo: Photo, in group: PhotoGroup) -> Double {
-        var score = 0.0
         let peers = group.photos
 
-        if let blur = photo.blurScore {
-            let peerBlurs = peers.compactMap(\.blurScore)
-            if let maxB = peerBlurs.max(), let minB = peerBlurs.min(), maxB > minB {
-                score += ((blur - minB) / (maxB - minB)) * 0.5
-            } else {
-                score += 0.25
+        if let faceSharp = photo.faceSharpness, !photo.faceRegions.isEmpty {
+            // Face detected — use face-region sharpness (Laplacian on face crop).
+            // Normalize relative to peers who also have faces.
+            let peerFaceScores = peers.compactMap(\.faceSharpness)
+            if let maxF = peerFaceScores.max(), let minF = peerFaceScores.min(), maxF > minF {
+                return (faceSharp - minF) / (maxF - minF)
             }
+            return 0.5
+        } else {
+            // No faces — use global blur score
+            return normalizedBlur(photo, peers: peers)
         }
+    }
 
-        if let fq = photo.faceQualityScore {
-            score += fq * 0.5
-        } else if let blur = photo.blurScore {
-            let peerBlurs = peers.compactMap(\.blurScore)
-            if let maxB = peerBlurs.max(), let minB = peerBlurs.min(), maxB > minB {
-                score += ((blur - minB) / (maxB - minB)) * 0.5
-            } else {
-                score += 0.25
-            }
-        }
-
-        return score
+    /// Normalize blur score relative to group peers (0-1 range)
+    private static func normalizedBlur(_ photo: Photo, peers: [Photo]) -> Double {
+        guard let blur = photo.blurScore else { return 0.5 }
+        let peerBlurs = peers.compactMap(\.blurScore)
+        guard let maxB = peerBlurs.max(), let minB = peerBlurs.min(), maxB > minB else { return 0.5 }
+        return (blur - minB) / (maxB - minB)
     }
 
 }

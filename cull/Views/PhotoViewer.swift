@@ -9,8 +9,6 @@ struct PhotoViewer: View {
     private let lookaheadCount = 30
     private let lookbehindCount = 30
 
-    /// Face quality threshold — below this, faces are considered blurry
-    private let faceBlurThreshold: Double = 0.35
 
     var body: some View {
         ZStack {
@@ -67,10 +65,10 @@ struct PhotoViewer: View {
                                 .foregroundStyle(isPhotoBlurry(photo) ? .orange : .white.opacity(0.6))
                             }
 
-                            if let fq = photo.faceQualityScore {
+                            if let fs = photo.faceSharpness {
                                 HStack(spacing: 3) {
                                     Image(systemName: "face.smiling")
-                                    Text(String(format: "%.0f%%", fq * 100))
+                                    Text(String(format: "%.0f", fs))
                                 }
                                 .foregroundStyle(.white.opacity(0.7))
                             }
@@ -193,7 +191,7 @@ struct PhotoViewer: View {
 
     /// Ranks photo within its group by quality. Returns 1-based rank, or nil if no scores yet.
     private func groupRank(photo: Photo, in group: PhotoGroup) -> Int? {
-        let scored = group.photos.filter { $0.blurScore != nil || $0.faceQualityScore != nil }
+        let scored = group.photos.filter { $0.blurScore != nil || $0.faceSharpness != nil }
         guard scored.count >= 2 else { return nil }
 
         let ranked = scored.sorted { qualityScore($0, in: group) > qualityScore($1, in: group) }
@@ -201,55 +199,29 @@ struct PhotoViewer: View {
         return idx + 1
     }
 
-    /// Composite quality score for ranking within a group.
-    /// Higher = better. Uses relative ranking within the group's score range.
     private func qualityScore(_ photo: Photo, in group: PhotoGroup) -> Double {
-        var score = 0.0
-        let peers = group.photos
-
-        if let blur = photo.blurScore {
-            let peerBlurs = peers.compactMap(\.blurScore)
-            if let maxBlur = peerBlurs.max(), let minBlur = peerBlurs.min(), maxBlur > minBlur {
-                score += ((blur - minBlur) / (maxBlur - minBlur)) * 0.5
-            } else {
-                score += 0.25
-            }
-        }
-
-        if let fq = photo.faceQualityScore {
-            score += fq * 0.5
-        } else if photo.blurScore != nil {
-            // No faces — blur gets full weight
-            let peerBlurs = peers.compactMap(\.blurScore)
-            if let maxBlur = peerBlurs.max(), let minBlur = peerBlurs.min(), maxBlur > minBlur {
-                score += ((photo.blurScore! - minBlur) / (maxBlur - minBlur)) * 0.5
-            } else {
-                score += 0.25
-            }
-        }
-
-        return score
+        ContentView.qualityScore(photo, in: group)
     }
 
     // MARK: - Blur detection (relative within group)
 
-    /// Uses relative ranking: a photo is blurry only if it's significantly softer
-    /// than its group peers. For faces, uses face quality score directly.
+    /// Relative blur detection — blurry only if significantly softer than group peers.
+    /// For faces: compares face sharpness. Without faces: compares global blur.
     private func isPhotoBlurry(_ photo: Photo) -> Bool {
+        guard let group = session.selectedGroup else { return false }
+
         if !photo.faceRegions.isEmpty {
-            guard let fq = photo.faceQualityScore else { return false }
-            return fq < faceBlurThreshold
+            guard let fs = photo.faceSharpness else { return false }
+            let peerScores = group.photos.compactMap(\.faceSharpness)
+            guard peerScores.count >= 2 else { return false }
+            let median = peerScores.sorted()[peerScores.count / 2]
+            return fs < median * 0.4
         }
 
-        guard let blur = photo.blurScore,
-              let group = session.selectedGroup else { return false }
-
-        // Gather blur scores from group peers that have been analyzed
+        guard let blur = photo.blurScore else { return false }
         let peerScores = group.photos.compactMap(\.blurScore)
         guard peerScores.count >= 2 else { return false }
-
         let median = peerScores.sorted()[peerScores.count / 2]
-        // Only flag if this photo is less than 40% of the group median
         return blur < median * 0.4
     }
 

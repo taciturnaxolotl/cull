@@ -21,7 +21,8 @@ final class Photo: Identifiable {
 
     // Populated asynchronously by QualityAnalyzer
     var blurScore: Double?
-    var faceQualityScore: Double?
+    /// Laplacian variance measured on the face crop — actual face sharpness
+    var faceSharpness: Double?
     /// Normalized face bounding boxes (Vision coordinates: origin bottom-left, 0-1 range)
     var faceRegions: [CGRect] = []
 
