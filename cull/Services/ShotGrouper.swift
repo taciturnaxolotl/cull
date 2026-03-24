@@ -22,7 +22,7 @@ struct ShotGrouper {
         var completed = 0.0
 
         // Step 2: Generate feature prints for all photos (batched to report smooth progress)
-        let fpWork: [(UUID, URL)] = photos.map { ($0.id, $0.pairedURL ?? $0.url) }
+        let fpWork: [(UUID, URL)] = photos.map { ($0.id, $0.url) }
         var featurePrintMap: [UUID: VNFeaturePrintObservation] = [:]
         let batchSize = 8
         for batchStart in stride(from: 0, to: fpWork.count, by: batchSize) {

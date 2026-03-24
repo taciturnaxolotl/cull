@@ -13,6 +13,13 @@ struct PhotoImporter {
         let paired: Int // count of RAW+JPEG pairs found
     }
 
+    private static let exifDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
     static func importFolder(_ url: URL) async throws -> ImportResult {
         let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .contentTypeKey]
         guard let enumerator = FileManager.default.enumerator(
@@ -60,13 +67,16 @@ struct PhotoImporter {
             }
         }
 
-        // Read EXIF dates + image metadata sequentially (header-only reads are fast, ~1ms each)
-        for photo in photos {
-            let dateURL = photo.url
-            photo.captureDate = readCaptureDate(from: dateURL)
-            readImageMetadata(from: photo.url, into: photo)
-            if let pairedURL = photo.pairedURL {
-                readPairedMetadata(from: pairedURL, into: photo)
+        // Read EXIF dates + image metadata in parallel batches
+        let formatter = exifDateFormatter
+        for batchStart in stride(from: 0, to: photos.count, by: 16) {
+            let batch = Array(photos[batchStart..<min(batchStart + 16, photos.count)])
+            await withTaskGroup(of: Void.self) { group in
+                for photo in batch {
+                    group.addTask {
+                        readAllMetadata(photo: photo, formatter: formatter)
+                    }
+                }
             }
         }
 
@@ -75,47 +85,46 @@ struct PhotoImporter {
         return ImportResult(photos: photos, paired: pairedCount)
     }
 
-    nonisolated static func readCaptureDate(from url: URL) -> Date? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
-              let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any],
-              let dateString = exif[kCGImagePropertyExifDateTimeOriginal as String] as? String
-        else { return nil }
+    /// Read all metadata from a single CGImageSource open — date, dimensions, file size, paired metadata
+    nonisolated private static func readAllMetadata(photo: Photo, formatter: DateFormatter) {
+        let url = photo.url
 
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        return formatter.date(from: dateString)
-    }
-
-    nonisolated static func readPairedMetadata(from url: URL, into photo: Photo) {
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-           let size = attrs[.size] as? Int64 {
-            photo.pairedFileSize = size
-        }
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
-              let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
-              let height = properties[kCGImagePropertyPixelHeight as String] as? Int
-        else { return }
-        photo.pairedPixelWidth = width
-        photo.pairedPixelHeight = height
-    }
-
-    nonisolated static func readImageMetadata(from url: URL, into photo: Photo) {
-        // File size
+        // File size from filesystem
         if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
            let size = attrs[.size] as? Int64 {
             photo.fileSize = size
         }
-        // Pixel dimensions from image header (no full decode)
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
-              let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
-              let height = properties[kCGImagePropertyPixelHeight as String] as? Int
-        else { return }
-        photo.pixelWidth = width
-        photo.pixelHeight = height
+
+        // Open image source once for date + dimensions
+        if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
+            // Dimensions
+            if let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
+               let height = properties[kCGImagePropertyPixelHeight as String] as? Int {
+                photo.pixelWidth = width
+                photo.pixelHeight = height
+            }
+            // EXIF date
+            if let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any],
+               let dateString = exif[kCGImagePropertyExifDateTimeOriginal as String] as? String {
+                photo.captureDate = formatter.date(from: dateString)
+            }
+        }
+
+        // Paired file metadata
+        if let pairedURL = photo.pairedURL {
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: pairedURL.path),
+               let size = attrs[.size] as? Int64 {
+                photo.pairedFileSize = size
+            }
+            if let source = CGImageSourceCreateWithURL(pairedURL as CFURL, nil),
+               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+               let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
+               let height = properties[kCGImagePropertyPixelHeight as String] as? Int {
+                photo.pairedPixelWidth = width
+                photo.pairedPixelHeight = height
+            }
+        }
     }
 
     static func isRAWExtension(_ ext: String) -> Bool {
