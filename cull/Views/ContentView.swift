@@ -92,14 +92,14 @@ struct ContentView: View {
                 }
 
                 await withTaskGroup(of: Void.self) { parallelGroup in
-                    // Stream 1: Quality analysis (blur + faces)
+                    // Stream 1: Quality analysis (blur + faces) — low priority to not starve preview/thumbnail loading
                     parallelGroup.addTask {
                         var completed = 0.0
                         for batchStart in stride(from: 0, to: allPhotos.count, by: 8) {
                             let batch = Array(allPhotos[batchStart..<min(batchStart + 8, allPhotos.count)])
                             await withTaskGroup(of: Void.self) { group in
                                 for photo in batch {
-                                    group.addTask {
+                                    group.addTask(priority: .background) {
                                         await QualityAnalyzer.analyze(photo: photo)
                                     }
                                 }
@@ -110,7 +110,7 @@ struct ContentView: View {
                         }
                     }
 
-                    // Stream 2: Thumbnails
+                    // Stream 2: Thumbnails — high priority
                     parallelGroup.addTask {
                         await c.preloadAllThumbnails(photos: allPhotos) { p in
                             thumbProgress = p
@@ -118,7 +118,7 @@ struct ContentView: View {
                         }
                     }
 
-                    // Stream 3: Initial full-res previews
+                    // Stream 3: Initial full-res previews — high priority
                     parallelGroup.addTask {
                         let ahead = Array(allPhotos.prefix(30))
                         let behind = Array(allPhotos.suffix(30))

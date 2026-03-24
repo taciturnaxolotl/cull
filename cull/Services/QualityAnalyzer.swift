@@ -5,17 +5,44 @@ import Vision
 
 struct QualityAnalyzer {
 
+    /// For RAW files, find the best image index to analyze.
+    /// RAW files embed JPEG previews (with camera sharpening) as secondary images.
+    /// Returns (source, imageIndex) so the thumbnail API can extract from the right image.
+    private static func sourceForAnalysis(_ url: URL) -> (CGImageSource, Int)? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+
+        let count = CGImageSourceGetCount(source)
+        if count > 1 {
+            // Find the largest embedded preview (usually a camera-processed JPEG)
+            var bestIndex = 0
+            var bestPixels = 0
+            for i in 0..<count {
+                if let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any],
+                   let w = props[kCGImagePropertyPixelWidth as String] as? Int,
+                   let h = props[kCGImagePropertyPixelHeight as String] as? Int {
+                    let pixels = w * h
+                    if pixels > bestPixels {
+                        bestPixels = pixels
+                        bestIndex = i
+                    }
+                }
+            }
+            return (source, bestIndex)
+        }
+        return (source, 0)
+    }
+
     /// Laplacian variance sharpness detection using Accelerate (vDSP).
     /// Uses Apple's recommended 8-connected Laplacian kernel for better edge sensitivity.
     static func analyzeBlur(imageURL: URL) async -> Double? {
-        guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, nil) else { return nil }
+        guard let (source, imageIndex) = sourceForAnalysis(imageURL) else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
             kCGImageSourceThumbnailMaxPixelSize: 512,
             kCGImageSourceShouldCache: false,
             kCGImageSourceCreateThumbnailWithTransform: true
         ]
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, imageIndex, options as CFDictionary) else { return nil }
 
         // Read ISO for noise compensation
         let iso = readISO(from: source)
@@ -95,7 +122,7 @@ struct QualityAnalyzer {
     }
 
     static func analyzeFaces(imageURL: URL) async -> FaceResult {
-        guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, nil) else {
+        guard let (source, imageIndex) = sourceForAnalysis(imageURL) else {
             return FaceResult(sharpness: nil, regions: [])
         }
         let options: [CFString: Any] = [
@@ -104,7 +131,7 @@ struct QualityAnalyzer {
             kCGImageSourceShouldCache: false,
             kCGImageSourceCreateThumbnailWithTransform: true
         ]
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, imageIndex, options as CFDictionary) else {
             return FaceResult(sharpness: nil, regions: [])
         }
 
@@ -157,7 +184,7 @@ struct QualityAnalyzer {
     }
 
     static func analyze(photo: Photo) async {
-        let url = photo.pairedURL ?? photo.url
+        let url = photo.url
         async let blur = analyzeBlur(imageURL: url)
         async let faces = analyzeFaces(imageURL: url)
 

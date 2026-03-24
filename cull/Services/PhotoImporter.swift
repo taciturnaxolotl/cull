@@ -62,7 +62,7 @@ struct PhotoImporter {
 
         // Read EXIF dates + image metadata sequentially (header-only reads are fast, ~1ms each)
         for photo in photos {
-            let dateURL = photo.pairedURL ?? photo.url
+            let dateURL = photo.url
             photo.captureDate = readCaptureDate(from: dateURL)
             readImageMetadata(from: photo.url, into: photo)
             if let pairedURL = photo.pairedURL {
