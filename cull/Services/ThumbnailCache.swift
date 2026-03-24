@@ -7,6 +7,7 @@ final class ThumbnailCache {
     private let memoryCache = NSCache<NSString, NSImage>()
     private let previewCache = NSCache<NSString, NSImage>()
     private var previewKeys = Set<String>()
+    private var preloadTask: Task<Void, Never>?
     private let diskCacheURL: URL
     private let maxPixelSize: Int
 
@@ -206,7 +207,10 @@ final class ThumbnailCache {
     }
 
     /// Fire-and-forget: preload previews in background. Used during navigation.
+    /// Cancels any previous preload so stale work doesn't compete.
     func preloadPreviews(photos: [Photo]) {
+        preloadTask?.cancel()
+
         let work: [(String, URL)] = photos.compactMap { photo in
             let key = photo.url.absoluteString
             guard previewCache.object(forKey: key as NSString) == nil else { return nil }
@@ -216,13 +220,15 @@ final class ThumbnailCache {
 
         let pc = previewCache
 
-        Task.detached(priority: .utility) {
+        preloadTask = Task.detached(priority: .utility) {
             for batchStart in stride(from: 0, to: work.count, by: 4) {
+                guard !Task.isCancelled else { return }
                 let batch = Array(work[batchStart..<min(batchStart + 4, work.count)])
                 await withTaskGroup(of: (String, NSImage?).self) { group in
                     for (key, url) in batch {
                         group.addTask {
-                            (key, Self.loadFullPreviewSync(from: url))
+                            guard !Task.isCancelled else { return (key, nil) }
+                            return (key, Self.loadFullPreviewSync(from: url))
                         }
                     }
                     for await (key, image) in group {

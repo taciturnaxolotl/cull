@@ -72,6 +72,15 @@ struct PhotoViewer: View {
             guard let photo = session.selectedPhoto else { return }
             let photoID = photo.id
 
+            // If full-res is already cached, show it immediately
+            if let cached = cache.cachedPreview(for: photo) {
+                displayImage = cached
+            }
+
+            // Wait for user to stop navigating before doing any loading
+            try? await Task.sleep(for: .milliseconds(100))
+            guard !Task.isCancelled, displayedPhotoID == photoID else { return }
+
             // Load current photo's full-res preview
             if cache.cachedPreview(for: photo) == nil {
                 if let full = await cache.previewImage(for: photo) {
@@ -80,15 +89,17 @@ struct PhotoViewer: View {
                 }
             }
 
-            // Debounce: wait briefly before preloading window
-            // If user is holding arrow keys, this task gets cancelled before preload fires
-            guard displayedPhotoID == photoID else { return }
-            try? await Task.sleep(for: .milliseconds(150))
+            // Preload window fanning out from current position (closest first)
             guard !Task.isCancelled, displayedPhotoID == photoID else { return }
-
             let ahead = session.photosAhead(lookaheadCount)
             let behind = session.photosBehind(lookbehindCount)
-            let window = behind + [photo] + ahead
+            var fanOut: [Photo] = []
+            let maxLen = max(ahead.count, behind.count)
+            for i in 0..<maxLen {
+                if i < ahead.count { fanOut.append(ahead[i]) }
+                if i < behind.count { fanOut.append(behind[i]) }
+            }
+            let window = [photo] + fanOut
             cache.preloadPreviews(photos: window)
             cache.evictPreviews(keeping: window)
         }
