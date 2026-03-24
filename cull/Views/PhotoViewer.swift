@@ -137,9 +137,14 @@ struct PhotoViewer: View {
 
                         Spacer()
 
-                        Text(photo.url.lastPathComponent)
-                            .foregroundStyle(.white.opacity(0.6))
-                            .font(.caption)
+                        HStack(spacing: 6) {
+                            Text(photo.url.lastPathComponent)
+                            if let date = photo.captureDate {
+                                Text(date, format: .dateTime.month().day().year().hour().minute().second())
+                            }
+                        }
+                        .foregroundStyle(.white.opacity(0.6))
+                        .font(.caption)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)

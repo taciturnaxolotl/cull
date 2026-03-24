@@ -69,14 +69,35 @@ struct PhotoImporter {
 
         // Read EXIF dates + image metadata in parallel batches
         let formatter = exifDateFormatter
-        for batchStart in stride(from: 0, to: photos.count, by: 16) {
-            let batch = Array(photos[batchStart..<min(batchStart + 16, photos.count)])
-            await withTaskGroup(of: Void.self) { group in
-                for photo in batch {
+        let metadataInputs: [(Int, URL, URL?)] = photos.enumerated().map { (i, photo) in
+            (i, photo.url, photo.pairedURL)
+        }
+
+        for batchStart in stride(from: 0, to: metadataInputs.count, by: 16) {
+            let batch = Array(metadataInputs[batchStart..<min(batchStart + 16, metadataInputs.count)])
+            let results = await withTaskGroup(of: (Int, PhotoMetadata).self, returning: [(Int, PhotoMetadata)].self) { group in
+                for (index, url, pairedURL) in batch {
                     group.addTask {
-                        readAllMetadata(photo: photo, formatter: formatter)
+                        let meta = readAllMetadata(url: url, pairedURL: pairedURL, formatter: formatter)
+                        return (index, meta)
                     }
                 }
+                var collected: [(Int, PhotoMetadata)] = []
+                for await result in group {
+                    collected.append(result)
+                }
+                return collected
+            }
+            // Apply on main actor
+            for (index, meta) in results {
+                let photo = photos[index]
+                photo.captureDate = meta.captureDate
+                photo.pixelWidth = meta.pixelWidth
+                photo.pixelHeight = meta.pixelHeight
+                photo.fileSize = meta.fileSize
+                photo.pairedPixelWidth = meta.pairedPixelWidth
+                photo.pairedPixelHeight = meta.pairedPixelHeight
+                photo.pairedFileSize = meta.pairedFileSize
             }
         }
 
@@ -85,46 +106,56 @@ struct PhotoImporter {
         return ImportResult(photos: photos, paired: pairedCount)
     }
 
+    struct PhotoMetadata: Sendable {
+        var captureDate: Date?
+        var pixelWidth: Int = 0
+        var pixelHeight: Int = 0
+        var fileSize: Int64 = 0
+        var pairedPixelWidth: Int = 0
+        var pairedPixelHeight: Int = 0
+        var pairedFileSize: Int64 = 0
+    }
+
     /// Read all metadata from a single CGImageSource open — date, dimensions, file size, paired metadata
-    nonisolated private static func readAllMetadata(photo: Photo, formatter: DateFormatter) {
-        let url = photo.url
+    nonisolated private static func readAllMetadata(url: URL, pairedURL: URL?, formatter: DateFormatter) -> PhotoMetadata {
+        var meta = PhotoMetadata()
 
         // File size from filesystem
         if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
            let size = attrs[.size] as? Int64 {
-            photo.fileSize = size
+            meta.fileSize = size
         }
 
         // Open image source once for date + dimensions
         if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
-            // Dimensions
             if let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
                let height = properties[kCGImagePropertyPixelHeight as String] as? Int {
-                photo.pixelWidth = width
-                photo.pixelHeight = height
+                meta.pixelWidth = width
+                meta.pixelHeight = height
             }
-            // EXIF date
             if let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any],
                let dateString = exif[kCGImagePropertyExifDateTimeOriginal as String] as? String {
-                photo.captureDate = formatter.date(from: dateString)
+                meta.captureDate = formatter.date(from: dateString)
             }
         }
 
         // Paired file metadata
-        if let pairedURL = photo.pairedURL {
+        if let pairedURL {
             if let attrs = try? FileManager.default.attributesOfItem(atPath: pairedURL.path),
                let size = attrs[.size] as? Int64 {
-                photo.pairedFileSize = size
+                meta.pairedFileSize = size
             }
             if let source = CGImageSourceCreateWithURL(pairedURL as CFURL, nil),
                let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
                let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
                let height = properties[kCGImagePropertyPixelHeight as String] as? Int {
-                photo.pairedPixelWidth = width
-                photo.pairedPixelHeight = height
+                meta.pairedPixelWidth = width
+                meta.pairedPixelHeight = height
             }
         }
+
+        return meta
     }
 
     static func isRAWExtension(_ ext: String) -> Bool {

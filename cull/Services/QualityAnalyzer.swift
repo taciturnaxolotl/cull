@@ -184,7 +184,7 @@ struct QualityAnalyzer {
     }
 
     static func analyze(photo: Photo) async {
-        let url = photo.url
+        let url = photo.imageURL
         async let blur = analyzeBlur(imageURL: url)
         async let faces = analyzeFaces(imageURL: url)
 

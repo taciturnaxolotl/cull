@@ -38,20 +38,20 @@ final class ThumbnailCache {
 
     func thumbnail(for photo: Photo) async -> NSImage? {
         let key = photo.url.absoluteString
-        let url = photo.url
+        let loadURL = photo.imageURL
 
         if let cached = memoryCache.object(forKey: key as NSString) {
             return cached
         }
 
-        let diskPath = diskCacheURL.appendingPathComponent(stableDiskKey(for: url))
+        let diskPath = diskCacheURL.appendingPathComponent(stableDiskKey(for: photo.url))
         let pixelSize = maxPixelSize
 
         let image: NSImage? = await Task.detached(priority: .userInitiated) { () -> NSImage? in
             if let diskImage = NSImage(contentsOf: diskPath) {
                 return diskImage
             }
-            guard let extracted = Self.extractThumbnailSync(from: url, maxPixelSize: pixelSize) else { return nil }
+            guard let extracted = Self.extractThumbnailSync(from: loadURL, maxPixelSize: pixelSize) else { return nil }
             Self.saveToDisk(extracted, at: diskPath)
             return extracted
         }.value
@@ -69,10 +69,10 @@ final class ThumbnailCache {
             return cached
         }
 
-        let url = photo.url
+        let loadURL = photo.imageURL
 
         let image: NSImage? = await Task.detached(priority: .userInitiated) { () -> NSImage? in
-            Self.loadFullPreviewSync(from: url)
+            Self.loadFullPreviewSync(from: loadURL)
         }.value
 
         if let image {
@@ -89,8 +89,9 @@ final class ThumbnailCache {
         photos: [Photo],
         progress: (@Sendable (Double) async -> Void)? = nil
     ) async {
-        let thumbWork: [(String, URL)] = photos.map { photo in
-            (photo.url.absoluteString, photo.url)
+        // key = RAW url for cache identity, loadURL = JPEG when available for fast decode
+        let thumbWork: [(String, URL, URL)] = photos.map { photo in
+            (photo.url.absoluteString, photo.imageURL, photo.url)
         }
 
         let totalItems = Double(thumbWork.count)
@@ -104,13 +105,13 @@ final class ThumbnailCache {
             let batchEnd = min(batchStart + batchSize, thumbWork.count)
             let batch = Array(thumbWork[batchStart..<batchEnd])
             await withTaskGroup(of: (String, NSImage?).self) { group in
-                for (key, url) in batch {
-                    let diskPath = diskCache.appendingPathComponent(Self.stableDiskKey(for: url))
+                for (key, loadURL, cacheKeyURL) in batch {
+                    let diskPath = diskCache.appendingPathComponent(Self.stableDiskKey(for: cacheKeyURL))
                     group.addTask {
                         if let diskImage = NSImage(contentsOf: diskPath) {
                             return (key, diskImage)
                         }
-                        guard let extracted = Self.extractThumbnailSync(from: url, maxPixelSize: pixelSize) else {
+                        guard let extracted = Self.extractThumbnailSync(from: loadURL, maxPixelSize: pixelSize) else {
                             return (key, nil)
                         }
                         Self.saveToDisk(extracted, at: diskPath)
@@ -131,10 +132,10 @@ final class ThumbnailCache {
     }
 
     func preload(photos: [Photo]) {
-        let work: [(String, URL)] = photos.compactMap { photo in
+        let work: [(String, URL, URL)] = photos.compactMap { photo in
             let key = photo.url.absoluteString
             guard memoryCache.object(forKey: key as NSString) == nil else { return nil }
-            return (key, photo.url)
+            return (key, photo.imageURL, photo.url)
         }
         guard !work.isEmpty else { return }
 
@@ -146,13 +147,13 @@ final class ThumbnailCache {
             for batchStart in stride(from: 0, to: work.count, by: 8) {
                 let batch = Array(work[batchStart..<min(batchStart + 8, work.count)])
                 await withTaskGroup(of: (String, NSImage?).self) { group in
-                    for (key, url) in batch {
-                        let diskPath = diskCache.appendingPathComponent(Self.stableDiskKey(for: url))
+                    for (key, loadURL, cacheKeyURL) in batch {
+                        let diskPath = diskCache.appendingPathComponent(Self.stableDiskKey(for: cacheKeyURL))
                         group.addTask {
                             if let diskImage = NSImage(contentsOf: diskPath) {
                                 return (key, diskImage)
                             }
-                            guard let extracted = Self.extractThumbnailSync(from: url, maxPixelSize: pixelSize) else {
+                            guard let extracted = Self.extractThumbnailSync(from: loadURL, maxPixelSize: pixelSize) else {
                                 return (key, nil)
                             }
                             Self.saveToDisk(extracted, at: diskPath)
@@ -175,7 +176,7 @@ final class ThumbnailCache {
         progress: (@Sendable (Double) async -> Void)? = nil
     ) async {
         let work: [(String, URL)] = photos.map { photo in
-            (photo.url.absoluteString, photo.url)
+            (photo.url.absoluteString, photo.imageURL)
         }
 
         let totalItems = Double(work.count)
@@ -186,9 +187,9 @@ final class ThumbnailCache {
         for batchStart in stride(from: 0, to: work.count, by: batchSize) {
             let batch = Array(work[batchStart..<min(batchStart + batchSize, work.count)])
             await withTaskGroup(of: (String, NSImage?).self) { group in
-                for (key, url) in batch {
+                for (key, loadURL) in batch {
                     group.addTask {
-                        (key, Self.loadFullPreviewSync(from: url))
+                        (key, Self.loadFullPreviewSync(from: loadURL))
                     }
                 }
                 for await (key, image) in group {
@@ -213,7 +214,7 @@ final class ThumbnailCache {
         let work: [(String, URL)] = photos.compactMap { photo in
             let key = photo.url.absoluteString
             guard previewCache.object(forKey: key as NSString) == nil else { return nil }
-            return (key, photo.url)
+            return (key, photo.imageURL)
         }
         guard !work.isEmpty else { return }
 
@@ -224,10 +225,10 @@ final class ThumbnailCache {
                 guard !Task.isCancelled else { return }
                 let batch = Array(work[batchStart..<min(batchStart + 4, work.count)])
                 await withTaskGroup(of: (String, NSImage?).self) { group in
-                    for (key, url) in batch {
+                    for (key, loadURL) in batch {
                         group.addTask {
                             guard !Task.isCancelled else { return (key, nil) }
-                            return (key, Self.loadFullPreviewSync(from: url))
+                            return (key, Self.loadFullPreviewSync(from: loadURL))
                         }
                     }
                     for await (key, image) in group {

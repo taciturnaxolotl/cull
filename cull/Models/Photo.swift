@@ -38,6 +38,9 @@ final class Photo: Identifiable {
     // Populated by ShotGrouper
     var captureDate: Date?
 
+    /// URL to use for image loading (thumbnails, previews) — prefers JPEG for decode speed
+    var imageURL: URL { pairedURL ?? url }
+
     var isRAW: Bool {
         guard let utType = UTType(filenameExtension: url.pathExtension) else { return false }
         return utType.conforms(to: .rawImage)

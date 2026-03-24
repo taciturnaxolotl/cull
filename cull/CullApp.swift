@@ -6,7 +6,7 @@ struct CullApp: App {
     @State private var thumbnailCache = ThumbnailCache()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("Cull") {
             ContentView()
                 .environment(session)
                 .environment(thumbnailCache)

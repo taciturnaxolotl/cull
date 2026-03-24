@@ -10,7 +10,8 @@ struct ShotGrouper {
     static let mergeTimeThreshold: TimeInterval = 5
 
     /// Feature print distance threshold for visual similarity (Revision 2, macOS 14+)
-    static let similarityThreshold: Float = 0.35
+    /// Higher = more lenient grouping (different framings of same scene)
+    static let similarityThreshold: Float = 0.6
 
     /// Full grouping: temporal + visual similarity + merge close shots
     static func group(photos: [Photo], progress: (@Sendable (Double) async -> Void)? = nil) async -> [PhotoGroup] {
@@ -22,7 +23,7 @@ struct ShotGrouper {
         var completed = 0.0
 
         // Step 2: Generate feature prints for all photos (batched to report smooth progress)
-        let fpWork: [(UUID, URL)] = photos.map { ($0.id, $0.url) }
+        let fpWork: [(UUID, URL)] = photos.map { ($0.id, $0.imageURL) }
         var featurePrintMap: [UUID: VNFeaturePrintObservation] = [:]
         let batchSize = 8
         for batchStart in stride(from: 0, to: fpWork.count, by: batchSize) {
