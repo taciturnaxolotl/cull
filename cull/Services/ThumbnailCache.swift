@@ -47,7 +47,7 @@ final class ThumbnailCache {
         let diskPath = diskCacheURL.appendingPathComponent(stableDiskKey(for: photo.url))
         let pixelSize = maxPixelSize
 
-        let image: NSImage? = await Task.detached(priority: .userInitiated) { () -> NSImage? in
+        let image: NSImage? = await Task.detached { () -> NSImage? in
             if let diskImage = NSImage(contentsOf: diskPath) {
                 return diskImage
             }
@@ -71,7 +71,7 @@ final class ThumbnailCache {
 
         let loadURL = photo.imageURL
 
-        let image: NSImage? = await Task.detached(priority: .userInitiated) { () -> NSImage? in
+        let image: NSImage? = await Task.detached { () -> NSImage? in
             Self.loadFullPreviewSync(from: loadURL)
         }.value
 
@@ -162,7 +162,8 @@ final class ThumbnailCache {
                     }
                     for await (key, image) in group {
                         if let image {
-                            await MainActor.run { mc.setObject(image, forKey: key as NSString) }
+                            // NSCache is thread-safe, no need for MainActor
+                            mc.setObject(image, forKey: key as NSString)
                         }
                     }
                 }
@@ -224,19 +225,26 @@ final class ThumbnailCache {
             for batchStart in stride(from: 0, to: work.count, by: 4) {
                 guard !Task.isCancelled else { return }
                 let batch = Array(work[batchStart..<min(batchStart + 4, work.count)])
-                await withTaskGroup(of: (String, NSImage?).self) { group in
+                let batchKeys = await withTaskGroup(of: (String, NSImage?).self, returning: [String].self) { group in
                     for (key, loadURL) in batch {
                         group.addTask {
                             guard !Task.isCancelled else { return (key, nil) }
                             return (key, Self.loadFullPreviewSync(from: loadURL))
                         }
                     }
+                    var keys: [String] = []
                     for await (key, image) in group {
                         if let image {
-                            await MainActor.run {
-                                pc.setObject(image, forKey: key as NSString)
-                                self.previewKeys.insert(key)
-                            }
+                            pc.setObject(image, forKey: key as NSString)
+                            keys.append(key)
+                        }
+                    }
+                    return keys
+                }
+                if !batchKeys.isEmpty {
+                    await MainActor.run { [batchKeys] in
+                        for key in batchKeys {
+                            self.previewKeys.insert(key)
                         }
                     }
                 }

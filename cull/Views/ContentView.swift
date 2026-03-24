@@ -54,6 +54,43 @@ struct ContentView: View {
 
         Task {
             do {
+                // Try loading from workspace first
+                if s.openWorkspace(folder: url) {
+                    await MainActor.run { s.importStatus = "Loading from workspace..." }
+                    let allPhotos = s.allPhotos
+
+                    // Still need to load thumbnails and previews
+                    await MainActor.run { s.importStatus = "Loading thumbnails..." }
+                    await c.preloadAllThumbnails(photos: allPhotos) { p in
+                        await MainActor.run {
+                            withAnimation(.linear(duration: 0.2)) {
+                                s.importProgress = p * 0.7
+                            }
+                        }
+                    }
+
+                    await MainActor.run { s.importStatus = "Loading previews..." }
+                    let ahead = Array(allPhotos.prefix(30))
+                    let behind = Array(allPhotos.suffix(30))
+                    let initialPreviews = ahead + behind.reversed()
+                    await c.preloadAllPreviews(photos: initialPreviews) { p in
+                        await MainActor.run {
+                            withAnimation(.linear(duration: 0.2)) {
+                                s.importProgress = 0.7 + p * 0.3
+                            }
+                        }
+                    }
+
+                    await MainActor.run {
+                        s.importProgress = 1.0
+                        s.isImporting = false
+                    }
+                    return
+                }
+
+                // No workspace — full import
+                _ = WorkspaceDB(folder: url).map { s.workspace = $0 }
+
                 await MainActor.run { s.importStatus = "Scanning photos..." }
                 let result = try await PhotoImporter.importFolder(url, recursive: s.importRecursive)
 
@@ -142,6 +179,7 @@ struct ContentView: View {
                     s.selectedGroupIndex = 0
                     s.selectedPhotoIndex = 0
                     s.isImporting = false
+                    s.saveWorkspace()
                 }
             } catch {
                 await MainActor.run {
@@ -224,6 +262,17 @@ struct ContentView: View {
 
             ToolbarItem(placement: .automatic) {
                 HStack(spacing: 2) {
+                    ToolbarFilterButton(
+                        activeIcon: "circle.slash",
+                        inactiveIcon: "circle.slash",
+                        isActive: session.selectedPhoto?.rating == 0,
+                        isFiltered: session.hideUnrated,
+                        activeColor: .secondary,
+                        action: { session.clearRatingAndFlag() },
+                        filterAction: { session.toggleUnratedFilter() },
+                        help: "Unrated (0) · ⌘Click to filter"
+                    )
+
                     ForEach(1...5, id: \.self) { star in
                         let isActive = star <= (session.selectedPhoto?.rating ?? 0)
                         let isFiltered = session.hiddenRatings.contains(star)

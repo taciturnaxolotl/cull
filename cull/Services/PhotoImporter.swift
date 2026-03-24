@@ -123,6 +123,8 @@ struct PhotoImporter {
         var pairedPixelWidth: Int = 0
         var pairedPixelHeight: Int = 0
         var pairedFileSize: Int64 = 0
+
+        nonisolated init() {}
     }
 
     /// Read all metadata from a single CGImageSource open — date, dimensions, file size, paired metadata

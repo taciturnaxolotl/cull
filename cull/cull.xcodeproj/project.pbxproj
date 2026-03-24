@@ -24,6 +24,7 @@
 		0B0EC2972F722491004523FA /* PhotoExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0EC27D2F722491004523FA /* PhotoExporter.swift */; };
 		0B0EC2982F722491004523FA /* ThumbnailCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0EC2812F722491004523FA /* ThumbnailCache.swift */; };
 		0B0EC2A12F72570F004523FA /* icon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 0B0EC2A02F72570F004523FA /* icon.icon */; };
+		0B0EC2A52F727789004523FA /* WorkspaceDB.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0EC2A42F727789004523FA /* WorkspaceDB.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,6 +46,7 @@
 		0B0EC2882F722491004523FA /* PhotoViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoViewer.swift; sourceTree = "<group>"; };
 		0B0EC2992F724FE5004523FA /* cull.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = cull.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0B0EC2A02F72570F004523FA /* icon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = icon.icon; sourceTree = "<group>"; };
+		0B0EC2A42F727789004523FA /* WorkspaceDB.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceDB.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -84,6 +86,7 @@
 		0B0EC2822F722491004523FA /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				0B0EC2A42F727789004523FA /* WorkspaceDB.swift */,
 				0B0EC27D2F722491004523FA /* PhotoExporter.swift */,
 				0B0EC27E2F722491004523FA /* PhotoImporter.swift */,
 				0B0EC27F2F722491004523FA /* QualityAnalyzer.swift */,
@@ -180,6 +183,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0B0EC28A2F722491004523FA /* ImportView.swift in Sources */,
+				0B0EC2A52F727789004523FA /* WorkspaceDB.swift in Sources */,
 				0B0EC28B2F722491004523FA /* ExportSheet.swift in Sources */,
 				0B0EC28C2F722491004523FA /* ShotGrouper.swift in Sources */,
 				0B0EC28D2F722491004523FA /* Photo.swift in Sources */,

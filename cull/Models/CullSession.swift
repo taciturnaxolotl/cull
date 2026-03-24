@@ -17,12 +17,15 @@ final class CullSession {
     var importStatus: String = ""
 
     var undoManager: UndoManager?
+    var workspace: WorkspaceDB?
+    private var saveTask: Task<Void, Never>?
 
     // Remember cursor position per group
     private var groupCursorPositions: [UUID: Int] = [:]
 
     // Filters: command-click to toggle hiding photos with these attributes
     var hiddenRatings: Set<Int> = []   // ratings to hide (1-5)
+    var hideUnrated: Bool = false
     var hidePicks: Bool = false
     var hideRejects: Bool = false
 
@@ -33,21 +36,31 @@ final class CullSession {
             hiddenRatings.insert(rating)
         }
         ensureVisibleSelection()
+        scheduleSave()
     }
 
     func togglePickFilter() {
         hidePicks.toggle()
         ensureVisibleSelection()
+        scheduleSave()
     }
 
     func toggleRejectFilter() {
         hideRejects.toggle()
         ensureVisibleSelection()
+        scheduleSave()
+    }
+
+    func toggleUnratedFilter() {
+        hideUnrated.toggle()
+        ensureVisibleSelection()
+        scheduleSave()
     }
 
     func isPhotoFiltered(_ photo: Photo) -> Bool {
         if hidePicks && photo.flag == .pick { return true }
         if hideRejects && photo.flag == .reject { return true }
+        if hideUnrated && photo.rating == 0 && photo.flag == .none { return true }
         if photo.rating > 0 && hiddenRatings.contains(photo.rating) { return true }
         return false
     }
@@ -258,6 +271,7 @@ final class CullSession {
             session.applyPhotoState(photo, rating: oldRating, flag: oldFlag, actionName: actionName)
         }
         undoManager?.setActionName(actionName)
+        scheduleSave()
     }
 
     func setRating(_ rating: Int) {
@@ -314,5 +328,95 @@ final class CullSession {
 
     private func resetZoom() {
         zoomFaceIndex = nil
+    }
+
+    // MARK: - Workspace persistence
+
+    /// Debounced auto-save — coalesces rapid changes into a single write
+    func scheduleSave() {
+        saveTask?.cancel()
+        saveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            self?.saveWorkspace()
+        }
+    }
+
+    func saveWorkspace() {
+        guard let workspace, let sourceFolder else { return }
+        let allPhotos = groups.flatMap(\.photos)
+        workspace.savePhotos(allPhotos, sourceFolder: sourceFolder)
+        workspace.saveGroups(groups, sourceFolder: sourceFolder)
+        workspace.saveSettings(session: self)
+    }
+
+    func openWorkspace(folder: URL) -> Bool {
+        guard let db = WorkspaceDB(folder: folder) else { return false }
+        self.workspace = db
+
+        guard db.hasCachedData else { return false }
+
+        let savedPhotos = db.loadPhotos()
+        let groupOrder = db.loadGroupOrder()
+
+        // Rebuild photos keyed by relative path
+        var photosByPath: [String: Photo] = [:]
+        for saved in savedPhotos {
+            let url = folder.appendingPathComponent(saved.path)
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            let photo = Photo(url: url)
+            if let pairedPath = saved.pairedPath {
+                let pairedURL = folder.appendingPathComponent(pairedPath)
+                if FileManager.default.fileExists(atPath: pairedURL.path) {
+                    photo.pairedURL = pairedURL
+                }
+            }
+            photo.rating = saved.rating
+            photo.flag = saved.flag
+            photo.blurScore = saved.blurScore
+            photo.faceSharpness = saved.faceSharpness
+            photo.faceRegions = saved.faceRegions
+            photo.pixelWidth = saved.pixelWidth
+            photo.pixelHeight = saved.pixelHeight
+            photo.fileSize = saved.fileSize
+            photo.pairedPixelWidth = saved.pairedPixelWidth
+            photo.pairedPixelHeight = saved.pairedPixelHeight
+            photo.pairedFileSize = saved.pairedFileSize
+            photo.captureDate = saved.captureDate
+            photosByPath[saved.path] = photo
+        }
+
+        // Rebuild groups in saved order
+        var photosByGroup: [String: [Photo]] = [:]
+        for saved in savedPhotos {
+            guard let groupID = saved.groupID, let photo = photosByPath[saved.path] else { continue }
+            photosByGroup[groupID, default: []].append(photo)
+        }
+
+        var rebuiltGroups: [PhotoGroup] = []
+        for groupID in groupOrder {
+            guard let photos = photosByGroup[groupID], !photos.isEmpty else { continue }
+            rebuiltGroups.append(PhotoGroup(photos: photos))
+        }
+
+        // Add any ungrouped photos (shouldn't happen but safety)
+        let groupedPaths = Set(savedPhotos.compactMap { $0.groupID != nil ? $0.path : nil })
+        let ungrouped = photosByPath.filter { !groupedPaths.contains($0.key) }.map(\.value)
+        if !ungrouped.isEmpty {
+            rebuiltGroups.append(PhotoGroup(photos: ungrouped))
+        }
+
+        guard !rebuiltGroups.isEmpty else { return false }
+
+        self.groups = rebuiltGroups
+        db.loadSettings(into: self)
+
+        // Clamp navigation indices
+        selectedGroupIndex = min(selectedGroupIndex, groups.count - 1)
+        if let group = selectedGroup {
+            selectedPhotoIndex = min(selectedPhotoIndex, group.photos.count - 1)
+        }
+
+        return true
     }
 }
