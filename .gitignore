@@ -1,0 +1,19 @@
+# Xcode
+build/
+DerivedData/
+*.xcworkspace
+!*.xcodeproj/project.pbxproj
+xcuserdata/
+*.xcuserstate
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# App-specific caches
+*.thumbnails/
