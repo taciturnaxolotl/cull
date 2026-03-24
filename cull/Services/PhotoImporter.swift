@@ -60,10 +60,14 @@ struct PhotoImporter {
             }
         }
 
-        // Read EXIF dates sequentially (header-only reads are fast, ~1ms each)
+        // Read EXIF dates + image metadata sequentially (header-only reads are fast, ~1ms each)
         for photo in photos {
             let dateURL = photo.pairedURL ?? photo.url
             photo.captureDate = readCaptureDate(from: dateURL)
+            readImageMetadata(from: photo.url, into: photo)
+            if let pairedURL = photo.pairedURL {
+                readPairedMetadata(from: pairedURL, into: photo)
+            }
         }
 
         photos.sort { ($0.captureDate ?? .distantPast) < ($1.captureDate ?? .distantPast) }
@@ -82,6 +86,36 @@ struct PhotoImporter {
         formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
         formatter.locale = Locale(identifier: "en_US_POSIX")
         return formatter.date(from: dateString)
+    }
+
+    nonisolated static func readPairedMetadata(from url: URL, into photo: Photo) {
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let size = attrs[.size] as? Int64 {
+            photo.pairedFileSize = size
+        }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+              let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight as String] as? Int
+        else { return }
+        photo.pairedPixelWidth = width
+        photo.pairedPixelHeight = height
+    }
+
+    nonisolated static func readImageMetadata(from url: URL, into photo: Photo) {
+        // File size
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let size = attrs[.size] as? Int64 {
+            photo.fileSize = size
+        }
+        // Pixel dimensions from image header (no full decode)
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+              let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight as String] as? Int
+        else { return }
+        photo.pixelWidth = width
+        photo.pixelHeight = height
     }
 
     static func isRAWExtension(_ ext: String) -> Bool {

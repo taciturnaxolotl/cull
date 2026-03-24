@@ -26,6 +26,15 @@ final class Photo: Identifiable {
     /// Normalized face bounding boxes (Vision coordinates: origin bottom-left, 0-1 range)
     var faceRegions: [CGRect] = []
 
+    // Image metadata (populated during import)
+    var pixelWidth: Int = 0
+    var pixelHeight: Int = 0
+    var fileSize: Int64 = 0
+    // Paired file metadata (only set when pairedURL exists)
+    var pairedPixelWidth: Int = 0
+    var pairedPixelHeight: Int = 0
+    var pairedFileSize: Int64 = 0
+
     // Populated by ShotGrouper
     var captureDate: Date?
 

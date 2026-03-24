@@ -53,6 +53,31 @@ struct PhotoViewer: View {
                                 .foregroundStyle(.red)
                         }
 
+                        // Resolution & file size
+                        if photo.pixelWidth > 0 {
+                            HStack(spacing: 8) {
+                                // Primary file (RAW or standalone)
+                                HStack(spacing: 4) {
+                                    Text(photo.url.pathExtension.uppercased())
+                                        .fontWeight(.medium)
+                                    Text("\(photo.pixelWidth)×\(photo.pixelHeight)")
+                                    Text(Self.formatFileSize(photo.fileSize))
+                                }
+                                // Paired file (JPEG sidecar)
+                                if photo.pairedURL != nil, photo.pairedPixelWidth > 0 {
+                                    Text("·")
+                                    HStack(spacing: 4) {
+                                        Text(photo.pairedURL!.pathExtension.uppercased())
+                                            .fontWeight(.medium)
+                                        Text("\(photo.pairedPixelWidth)×\(photo.pairedPixelHeight)")
+                                        Text(Self.formatFileSize(photo.pairedFileSize))
+                                    }
+                                }
+                            }
+                            .foregroundStyle(.white.opacity(0.5))
+                            .font(.caption)
+                        }
+
                         Spacer()
 
                         // Quality scores
@@ -223,6 +248,19 @@ struct PhotoViewer: View {
         guard peerScores.count >= 2 else { return false }
         let median = peerScores.sorted()[peerScores.count / 2]
         return blur < median * 0.4
+    }
+
+    // MARK: - Formatting
+
+    private static func formatFileSize(_ bytes: Int64) -> String {
+        if bytes >= 1_073_741_824 {
+            return String(format: "%.1f GB", Double(bytes) / 1_073_741_824)
+        } else if bytes >= 1_048_576 {
+            return String(format: "%.1f MB", Double(bytes) / 1_048_576)
+        } else if bytes >= 1024 {
+            return String(format: "%.0f KB", Double(bytes) / 1024)
+        }
+        return "\(bytes) B"
     }
 
     // MARK: - Zoom calculations
