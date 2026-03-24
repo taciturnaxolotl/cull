@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		BB000001SPARKLE00000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = BB000002SPARKLE00000002 /* Sparkle */; };
 		0B0EC2722F72210B004523FA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0B0EC2712F72210B004523FA /* Assets.xcassets */; };
 		0B0EC28A2F722491004523FA /* ImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0EC2872F722491004523FA /* ImportView.swift */; };
 		0B0EC28B2F722491004523FA /* ExportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0EC2842F722491004523FA /* ExportSheet.swift */; };
@@ -58,6 +59,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BB000001SPARKLE00000001 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -132,6 +134,7 @@
 			);
 			name = cull;
 			packageProductDependencies = (
+				BB000002SPARKLE00000002 /* Sparkle */,
 			);
 			productName = cull;
 			productReference = 0B0EC2992F724FE5004523FA /* cull.app */;
@@ -161,6 +164,9 @@
 			);
 			mainGroup = 0B0EC2612F722109004523FA;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				BB000003SPARKLE00000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0B0EC2612F722109004523FA;
 			projectDirPath = "";
@@ -344,7 +350,7 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
-				ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
 				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
@@ -356,6 +362,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = cull/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Cull;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -388,7 +395,7 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
-				ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
 				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
@@ -400,6 +407,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = cull/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Cull;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -442,6 +450,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		BB000003SPARKLE00000003 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.6.4;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		BB000002SPARKLE00000002 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BB000003SPARKLE00000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 0B0EC2622F722109004523FA /* Project object */;
 }

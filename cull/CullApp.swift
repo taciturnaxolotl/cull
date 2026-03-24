@@ -1,7 +1,9 @@
 import SwiftUI
+import Sparkle
 
 @main
 struct CullApp: App {
+    private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
     @State private var session = CullSession()
     @State private var thumbnailCache = ThumbnailCache()
     @AppStorage("recentFolders") private var recentFoldersData: Data = Data()
@@ -169,6 +171,12 @@ struct CullApp: App {
             }
         }
 
+        .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesView(updater: updaterController.updater)
+            }
+        }
+
         Settings {
             SettingsView()
         }
@@ -183,6 +191,30 @@ struct CullApp: App {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         NotificationCenter.default.post(name: .openFolder, object: url)
+    }
+}
+
+struct CheckForUpdatesView: View {
+    @ObservedObject private var checkForUpdatesViewModel: CheckForUpdatesViewModel
+
+    init(updater: SPUUpdater) {
+        self.checkForUpdatesViewModel = CheckForUpdatesViewModel(updater: updater)
+    }
+
+    var body: some View {
+        Button("Check for Updates…", action: checkForUpdatesViewModel.updater.checkForUpdates)
+            .disabled(!checkForUpdatesViewModel.canCheckForUpdates)
+    }
+}
+
+final class CheckForUpdatesViewModel: ObservableObject {
+    @Published var canCheckForUpdates = false
+    let updater: SPUUpdater
+
+    init(updater: SPUUpdater) {
+        self.updater = updater
+        updater.publisher(for: \.canCheckForUpdates)
+            .assign(to: &$canCheckForUpdates)
     }
 }
 
