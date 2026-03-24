@@ -71,40 +71,43 @@ final class CullSession {
 
     // MARK: - Lookahead
 
-    /// Returns the next N photos from the current position across group boundaries
+    /// Returns the next N photos from the current position, wrapping around to start
     func photosAhead(_ count: Int) -> [Photo] {
+        let all = allPhotos
+        guard !all.isEmpty else { return [] }
+        guard let currentIndex = flatIndex else { return [] }
         var result: [Photo] = []
-        var gi = selectedGroupIndex
-        var pi = selectedPhotoIndex + 1
-
-        while result.count < count && gi < groups.count {
-            let group = groups[gi]
-            while pi < group.photos.count && result.count < count {
-                result.append(group.photos[pi])
-                pi += 1
-            }
-            gi += 1
-            pi = 0
+        for i in 1...min(count, all.count - 1) {
+            result.append(all[(currentIndex + i) % all.count])
         }
         return result
     }
 
-    /// Returns the previous N photos from the current position across group boundaries
+    /// Returns the previous N photos from the current position, wrapping around to end
     func photosBehind(_ count: Int) -> [Photo] {
+        let all = allPhotos
+        guard !all.isEmpty else { return [] }
+        guard let currentIndex = flatIndex else { return [] }
         var result: [Photo] = []
-        var gi = selectedGroupIndex
-        var pi = selectedPhotoIndex - 1
-
-        while result.count < count && gi >= 0 {
-            let group = groups[gi]
-            while pi >= 0 && result.count < count {
-                result.append(group.photos[pi])
-                pi -= 1
-            }
-            gi -= 1
-            if gi >= 0 { pi = groups[gi].photos.count - 1 }
+        for i in 1...min(count, all.count - 1) {
+            result.append(all[(currentIndex - i + all.count) % all.count])
         }
         return result
+    }
+
+    /// Current photo's index in the flat allPhotos array
+    private var flatIndex: Int? {
+        guard let photo = selectedPhoto else { return nil }
+        var idx = 0
+        for gi in 0..<groups.count {
+            for pi in 0..<groups[gi].photos.count {
+                if gi == selectedGroupIndex && pi == selectedPhotoIndex {
+                    return idx
+                }
+                idx += 1
+            }
+        }
+        return nil
     }
 
     // MARK: - Culling Actions

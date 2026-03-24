@@ -95,8 +95,10 @@ struct ImportView: View {
                     }
                 }
 
-                // Phase 3: Preload first 30 full-res previews (98-100%)
-                let initialPreviews = Array(allPhotos.prefix(30))
+                // Phase 3: Preload initial full-res previews (98-100%)
+                let ahead = Array(allPhotos.prefix(30))
+                let behind = Array(allPhotos.suffix(30))
+                let initialPreviews = ahead + behind.reversed()
                 var lastPreviewReported = 0.98
                 await c.preloadAllPreviews(photos: initialPreviews) { p in
                     let mapped = 0.98 + p * 0.02
