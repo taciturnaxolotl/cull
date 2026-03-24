@@ -1,5 +1,6 @@
-import SwiftUI
+import Combine
 import Sparkle
+import SwiftUI
 
 @main
 struct CullApp: App {
