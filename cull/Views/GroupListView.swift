@@ -13,7 +13,8 @@ struct GroupListView: View {
                             GroupThumbnail(
                                 group: group,
                                 index: index,
-                                isSelected: index == session.selectedGroupIndex
+                                isSelected: index == session.selectedGroupIndex,
+                                visibleCount: group.photos.filter { !session.isPhotoFiltered($0) }.count
                             )
                             .id(group.id)
                             .onTapGesture {
@@ -39,6 +40,7 @@ private struct GroupThumbnail: View {
     let group: PhotoGroup
     let index: Int
     let isSelected: Bool
+    let visibleCount: Int
     @Environment(ThumbnailCache.self) private var cache
     @State private var thumbnail: NSImage?
 
@@ -56,7 +58,7 @@ private struct GroupThumbnail: View {
                     .frame(width: 112, height: 80)
             }
 
-            Text("\(group.photos.count)")
+            Text("\(visibleCount)")
                 .font(.caption2.bold())
                 .padding(.horizontal, 5)
                 .padding(.vertical, 2)

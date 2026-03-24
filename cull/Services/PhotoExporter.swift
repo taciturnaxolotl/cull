@@ -15,6 +15,15 @@ enum ExportMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum ExportFolderStructure: String, CaseIterable, Identifiable {
+    case flat = "Flat"
+    case separateRawJpeg = "RAW / JPEG folders"
+    case byRating = "By star rating"
+    case ratingAndType = "By rating, RAW / JPEG"
+
+    var id: String { rawValue }
+}
+
 struct ExportResult {
     let exported: Int
     let skipped: Int
@@ -27,7 +36,8 @@ struct PhotoExporter {
         photos: [Photo],
         destination: URL,
         fileType: ExportFileType,
-        mode: ExportMode
+        mode: ExportMode,
+        folderStructure: ExportFolderStructure = .flat
     ) async -> ExportResult {
         let fm = FileManager.default
 
@@ -49,11 +59,22 @@ struct PhotoExporter {
                 continue
             }
 
+            var photoExported = false
             for sourceURL in urls {
                 let accessing = sourceURL.startAccessingSecurityScopedResource()
                 defer { if accessing { sourceURL.stopAccessingSecurityScopedResource() } }
 
-                let destURL = destination.appendingPathComponent(sourceURL.lastPathComponent)
+                let subfolder = subfolder(for: sourceURL, photo: photo, structure: folderStructure)
+                let destDir = subfolder.isEmpty ? destination : destination.appendingPathComponent(subfolder)
+
+                do {
+                    try fm.createDirectory(at: destDir, withIntermediateDirectories: true)
+                } catch {
+                    errors.append("\(sourceURL.lastPathComponent): Cannot create folder \(subfolder)")
+                    continue
+                }
+
+                let destURL = destDir.appendingPathComponent(sourceURL.lastPathComponent)
                 do {
                     if fm.fileExists(atPath: destURL.path) {
                         try fm.removeItem(at: destURL)
@@ -64,14 +85,32 @@ struct PhotoExporter {
                     case .move:
                         try fm.moveItem(at: sourceURL, to: destURL)
                     }
-                    exported += 1
+                    photoExported = true
                 } catch {
                     errors.append("\(sourceURL.lastPathComponent): \(error.localizedDescription)")
                 }
             }
+            if photoExported { exported += 1 }
         }
 
         return ExportResult(exported: exported, skipped: skipped, errors: errors)
+    }
+
+    private static func subfolder(for sourceURL: URL, photo: Photo, structure: ExportFolderStructure) -> String {
+        let isRAW = PhotoImporter.isRAWExtension(sourceURL.pathExtension)
+        let typeName = isRAW ? "RAW" : "JPEG"
+        let ratingName = photo.rating > 0 ? "\(photo.rating)-star" : "Unrated"
+
+        switch structure {
+        case .flat:
+            return ""
+        case .separateRawJpeg:
+            return typeName
+        case .byRating:
+            return ratingName
+        case .ratingAndType:
+            return "\(ratingName)/\(typeName)"
+        }
     }
 
     private static func urlsForExport(photo: Photo, fileType: ExportFileType) -> [URL] {

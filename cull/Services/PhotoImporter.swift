@@ -20,20 +20,29 @@ struct PhotoImporter {
         return f
     }()
 
-    static func importFolder(_ url: URL) async throws -> ImportResult {
-        let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .contentTypeKey]
-        guard let enumerator = FileManager.default.enumerator(
-            at: url,
-            includingPropertiesForKeys: Array(resourceKeys),
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
-        ) else {
-            throw ImportError.cannotReadFolder
-        }
-
-        var filesByBasename: [String: [URL]] = [:]
+    static func importFolder(_ url: URL, recursive: Bool = true) async throws -> ImportResult {
         var allURLs: [URL] = []
+        var filesByBasename: [String: [URL]] = [:]
 
-        let urls: [URL] = enumerator.compactMap { $0 as? URL }
+        let urls: [URL]
+        if recursive {
+            let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .contentTypeKey]
+            guard let enumerator = FileManager.default.enumerator(
+                at: url,
+                includingPropertiesForKeys: Array(resourceKeys),
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            ) else {
+                throw ImportError.cannotReadFolder
+            }
+            urls = enumerator.compactMap { $0 as? URL }
+        } else {
+            let contents = try FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+            urls = contents
+        }
         for fileURL in urls {
             let ext = fileURL.pathExtension.lowercased()
             guard supportedExtensions.contains(ext) else { continue }

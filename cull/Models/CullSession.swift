@@ -11,6 +11,7 @@ final class CullSession {
     /// Zoom state: nil = fit, -1 = center zoom, 0+ = face index
     var zoomFaceIndex: Int? = nil
 
+    var importRecursive: Bool = true
     var isImporting: Bool = false
     var importProgress: Double = 0
     var importStatus: String = ""

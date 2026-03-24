@@ -55,7 +55,7 @@ struct ContentView: View {
         Task {
             do {
                 await MainActor.run { s.importStatus = "Scanning photos..." }
-                let result = try await PhotoImporter.importFolder(url)
+                let result = try await PhotoImporter.importFolder(url, recursive: s.importRecursive)
 
                 // Phase 1: Feature print grouping (0-20%)
                 await MainActor.run { s.importStatus = "Grouping similar shots..." }

@@ -2,6 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ImportView: View {
+    @Environment(CullSession.self) private var session
     @State private var isDragging = false
 
     var body: some View {
@@ -26,6 +27,10 @@ struct ImportView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .keyboardShortcut("o")
+
+            @Bindable var s = session
+            Toggle("Include subfolders", isOn: $s.importRecursive)
+                .toggleStyle(.checkbox)
 
             Text("or drag a folder here")
                 .font(.caption)

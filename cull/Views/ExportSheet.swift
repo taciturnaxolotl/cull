@@ -6,21 +6,17 @@ struct ExportSheet: View {
 
     @State private var fileType: ExportFileType = .both
     @State private var exportMode: ExportMode = .copy
-    @State private var minimumRating: Int = 1
-    @State private var pickedOnly: Bool = false
+    @State private var folderStructure: ExportFolderStructure = .flat
     @State private var destination: URL?
     @State private var isExporting: Bool = false
     @State private var result: ExportResult?
-
-    @State private var excludeRejects: Bool = true
+    @State private var useCurrentFilters: Bool = true
 
     private var eligiblePhotos: [Photo] {
-        session.allPhotos.filter { photo in
-            if excludeRejects && photo.flag == .reject { return false }
-            if pickedOnly && photo.flag != .pick { return false }
-            if minimumRating > 0 && photo.rating < minimumRating { return false }
-            return true
+        if useCurrentFilters {
+            return session.allPhotos.filter { !session.isPhotoFiltered($0) }
         }
+        return session.allPhotos
     }
 
     var body: some View {
@@ -29,6 +25,8 @@ struct ExportSheet: View {
                 .font(.title2.bold())
 
             Form {
+                Toggle("Export only visible photos", isOn: $useCurrentFilters)
+
                 Picker("File Type", selection: $fileType) {
                     ForEach(ExportFileType.allCases) { type in
                         Text(type.rawValue).tag(type)
@@ -41,16 +39,11 @@ struct ExportSheet: View {
                     }
                 }
 
-                Picker("Minimum Rating", selection: $minimumRating) {
-                    Text("Any rating").tag(0)
-                    ForEach(1...5, id: \.self) { rating in
-                        Text(String(repeating: "★", count: rating) + String(repeating: "☆", count: 5 - rating))
-                            .tag(rating)
+                Picker("Folder Structure", selection: $folderStructure) {
+                    ForEach(ExportFolderStructure.allCases) { structure in
+                        Text(structure.rawValue).tag(structure)
                     }
                 }
-
-                Toggle("Picked only", isOn: $pickedOnly)
-                Toggle("Exclude rejected", isOn: $excludeRejects)
 
                 HStack {
                     if let destination {
@@ -72,7 +65,7 @@ struct ExportSheet: View {
 
             if let result {
                 VStack(spacing: 4) {
-                    Text("Exported \(result.exported) files")
+                    Text("Exported \(result.exported) photos")
                         .foregroundStyle(.green)
                     if !result.errors.isEmpty {
                         Text("\(result.errors.count) errors")
@@ -95,9 +88,11 @@ struct ExportSheet: View {
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
 
+                let canExport = destination != nil && !isExporting && !eligiblePhotos.isEmpty
                 Button("Export") { runExport() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(destination == nil || isExporting || eligiblePhotos.isEmpty)
+                    .disabled(!canExport)
+                    .opacity(canExport ? 1.0 : 0.4)
                     .keyboardShortcut(.defaultAction)
             }
         }
@@ -136,7 +131,8 @@ struct ExportSheet: View {
                 photos: photos,
                 destination: destination,
                 fileType: fileType,
-                mode: exportMode
+                mode: exportMode,
+                folderStructure: folderStructure
             )
             await MainActor.run {
                 result = exportResult
