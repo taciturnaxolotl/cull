@@ -6,8 +6,11 @@ import ImageIO
 final class ThumbnailCache {
     private let memoryCache = NSCache<NSString, NSImage>()
     private let previewCache = NSCache<NSString, NSImage>()
+    private var thumbnailKeys = Set<String>()
     private var previewKeys = Set<String>()
     private var preloadTask: Task<Void, Never>?
+    /// Bumped whenever cache state changes, to trigger SwiftUI re-renders for debug overlay
+    private(set) var cacheGeneration = 0
     private let diskCacheURL: URL
     private let maxPixelSize: Int
 
@@ -19,7 +22,7 @@ final class ThumbnailCache {
         memoryCache.countLimit = 500
         memoryCache.totalCostLimit = 100 * 1024 * 1024 // 100 MB
 
-        previewCache.countLimit = 70
+        previewCache.countLimit = 120
 
         try? FileManager.default.createDirectory(at: diskCacheURL, withIntermediateDirectories: true)
     }
@@ -58,6 +61,7 @@ final class ThumbnailCache {
 
         if let image {
             memoryCache.setObject(image, forKey: key as NSString)
+            thumbnailKeys.insert(key)
         }
         return image
     }
@@ -78,6 +82,7 @@ final class ThumbnailCache {
         if let image {
             previewCache.setObject(image, forKey: key as NSString)
             previewKeys.insert(key)
+            cacheGeneration += 1
         }
         return image
     }
@@ -118,15 +123,19 @@ final class ThumbnailCache {
                         return (key, extracted)
                     }
                 }
+                var batchKeys: [String] = []
                 for await (key, image) in group {
                     if let image {
                         mc.setObject(image, forKey: key as NSString)
+                        batchKeys.append(key)
                     }
                     completed += 1
                     if let progress {
                         await progress(completed / totalItems)
                     }
                 }
+                for k in batchKeys { thumbnailKeys.insert(k) }
+                if !batchKeys.isEmpty { cacheGeneration += 1 }
             }
         }
     }
@@ -197,6 +206,7 @@ final class ThumbnailCache {
                     if let image {
                         pc.setObject(image, forKey: key as NSString)
                         previewKeys.insert(key)
+                        cacheGeneration += 1
                     }
                     completed += 1
                     if let progress {
@@ -208,7 +218,8 @@ final class ThumbnailCache {
     }
 
     /// Fire-and-forget: preload previews in background. Used during navigation.
-    /// Cancels any previous preload so stale work doesn't compete.
+    /// Cancels previous preload to prevent cache thrashing from multiple
+    /// concurrent windows competing for the 70-entry preview cache.
     func preloadPreviews(photos: [Photo]) {
         preloadTask?.cancel()
 
@@ -246,6 +257,7 @@ final class ThumbnailCache {
                         for key in batchKeys {
                             self.previewKeys.insert(key)
                         }
+                        self.cacheGeneration += 1
                     }
                 }
             }
@@ -259,6 +271,24 @@ final class ThumbnailCache {
             previewCache.removeObject(forKey: key as NSString)
             previewKeys.remove(key)
         }
+    }
+
+    // MARK: - Stats
+
+    struct CacheStats {
+        let thumbnailCount: Int
+        let previewCount: Int
+        let previewLimit: Int
+        let thumbnailLimit: Int
+    }
+
+    func stats() -> CacheStats {
+        CacheStats(
+            thumbnailCount: thumbnailKeys.count,
+            previewCount: previewKeys.count,
+            previewLimit: previewCache.countLimit,
+            thumbnailLimit: memoryCache.countLimit
+        )
     }
 
     // MARK: - Sync image extraction
@@ -314,6 +344,8 @@ final class ThumbnailCache {
     func clearCache() {
         memoryCache.removeAllObjects()
         previewCache.removeAllObjects()
+        thumbnailKeys.removeAll()
+        previewKeys.removeAll()
         try? FileManager.default.removeItem(at: diskCacheURL)
         try? FileManager.default.createDirectory(at: diskCacheURL, withIntermediateDirectories: true)
     }

@@ -122,6 +122,13 @@ struct CullApp: App {
                 }
                 .keyboardShortcut(.space, modifiers: [])
                 .disabled(session.selectedPhoto == nil)
+
+                Divider()
+
+                Toggle("Debug Cache Overlay", isOn: Binding(
+                    get: { session.debugCacheOverlay },
+                    set: { session.debugCacheOverlay = $0 }
+                ))
             }
 
             // Navigate menu

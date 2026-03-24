@@ -41,6 +41,7 @@ private struct GroupThumbnail: View {
     let index: Int
     let isSelected: Bool
     let visibleCount: Int
+    @Environment(CullSession.self) private var session
     @Environment(ThumbnailCache.self) private var cache
     @State private var thumbnail: NSImage?
 
@@ -69,6 +70,18 @@ private struct GroupThumbnail: View {
         .overlay {
             RoundedRectangle(cornerRadius: 6)
                 .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 2)
+        }
+        .overlay(alignment: .topLeading) {
+            if session.debugCacheOverlay {
+                let _ = cache.cacheGeneration
+                let allCached = group.photos.allSatisfy { cache.cachedPreview(for: $0) != nil }
+                let anyCached = group.photos.contains { cache.cachedPreview(for: $0) != nil }
+                let debugColor: Color = allCached ? .green : (anyCached ? .yellow : .red)
+                Circle()
+                    .fill(debugColor)
+                    .frame(width: 6, height: 6)
+                    .padding(4)
+            }
         }
         .onAppear {
             guard let photo = group.representativePhoto else { return }

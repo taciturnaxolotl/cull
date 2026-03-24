@@ -5,6 +5,8 @@ struct PhotoViewer: View {
     @Environment(ThumbnailCache.self) private var cache
     @State private var displayImage: NSImage?
     @State private var displayedPhotoID: UUID?
+    /// Tracks what quality level is currently displayed: "preview", "thumbnail", or "none"
+    @State private var displayQuality: String = "none"
 
     private let lookaheadCount = 30
     private let lookbehindCount = 30
@@ -38,6 +40,90 @@ struct PhotoViewer: View {
                     .clipped()
                     .animation(.easeInOut(duration: 0.3), value: session.zoomFaceIndex)
                 }
+            }
+
+            // Debug cache overlay
+            if session.debugCacheOverlay, let photo = session.selectedPhoto {
+                let _ = cache.cacheGeneration // observe changes
+                let s = cache.stats()
+                let allPhotos = session.allPhotos
+                let currentFlatIndex = allPhotos.firstIndex(where: { $0.id == photo.id })
+
+                HStack(alignment: .top, spacing: 0) {
+                    Spacer()
+
+                    // Stats panel
+                    VStack(alignment: .leading, spacing: 3) {
+                        let hasPreview = cache.cachedPreview(for: photo) != nil
+                        let hasThumb = cache.cachedThumbnail(for: photo) != nil
+
+                        Text("Current Photo")
+                            .fontWeight(.semibold)
+                        HStack(spacing: 4) {
+                            Circle().fill(hasPreview ? .green : .red).frame(width: 8, height: 8)
+                            Text("Preview")
+                        }
+                        HStack(spacing: 4) {
+                            Circle().fill(hasThumb ? .green : .red).frame(width: 8, height: 8)
+                            Text("Thumbnail")
+                        }
+                        Text("Displaying: \(displayQuality)")
+
+                        Divider().overlay(Color.white.opacity(0.3))
+
+                        Text("Cache")
+                            .fontWeight(.semibold)
+                        Text("Thumbs: \(s.thumbnailCount)/\(s.thumbnailLimit)")
+                        Text("Previews: \(s.previewCount)/\(s.previewLimit)")
+
+                        Divider().overlay(Color.white.opacity(0.3))
+
+                        Text("Session")
+                            .fontWeight(.semibold)
+                        Text("Groups: \(session.groups.count)")
+                        Text("Photos: \(allPhotos.count)")
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.white)
+                    .padding(8)
+                    .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 6))
+
+                    // Cache minimap — precompute states so SwiftUI can diff
+                    let cacheStates: [Int] = allPhotos.map { p in
+                        if cache.cachedPreview(for: p) != nil { return 2 }
+                        if cache.cachedThumbnail(for: p) != nil { return 1 }
+                        return 0
+                    }
+
+                    GeometryReader { geo in
+                        let totalPhotos = cacheStates.count
+                        let height = geo.size.height - 16
+                        let rowH = totalPhotos > 0 ? max(height / CGFloat(totalPhotos), 1) : 1
+
+                        Canvas { context, size in
+                            let colors: [Color] = [.red, .yellow, .green]
+                            for (i, state) in cacheStates.enumerated() {
+                                let y = 8 + CGFloat(i) * rowH
+                                context.fill(
+                                    Path(CGRect(x: 0, y: y, width: size.width, height: max(rowH - 0.5, 0.5))),
+                                    with: .color(colors[state].opacity(0.8))
+                                )
+                            }
+
+                            if let idx = currentFlatIndex {
+                                let y = 8 + CGFloat(idx) * rowH
+                                context.fill(
+                                    Path(CGRect(x: -2, y: y - 1, width: size.width + 4, height: max(rowH + 2, 3))),
+                                    with: .color(.white)
+                                )
+                            }
+                        }
+                        .frame(width: 14)
+                    }
+                    .frame(width: 14)
+                    .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 3))
+                }
+                .padding(8)
             }
 
             // Bottom bar overlay
@@ -173,8 +259,12 @@ struct PhotoViewer: View {
             // Instant: show whatever we have cached synchronously
             if let cached = cache.cachedPreview(for: photo) {
                 displayImage = cached
+                displayQuality = "preview"
             } else if let thumb = cache.cachedThumbnail(for: photo) {
                 displayImage = thumb
+                displayQuality = "thumbnail"
+            } else {
+                displayQuality = "none"
             }
         }
         .task(id: session.selectedPhoto?.id) {
@@ -184,6 +274,7 @@ struct PhotoViewer: View {
             // If full-res is already cached, show it immediately
             if let cached = cache.cachedPreview(for: photo) {
                 displayImage = cached
+                displayQuality = "preview"
             }
 
             // Wait for user to stop navigating before doing any loading
@@ -195,6 +286,7 @@ struct PhotoViewer: View {
                 if let full = await cache.previewImage(for: photo) {
                     guard displayedPhotoID == photoID else { return }
                     displayImage = full
+                    displayQuality = "preview"
                 }
             }
 
@@ -217,8 +309,10 @@ struct PhotoViewer: View {
                 displayedPhotoID = photo.id
                 if let cached = cache.cachedPreview(for: photo) {
                     displayImage = cached
+                    displayQuality = "preview"
                 } else if let thumb = cache.cachedThumbnail(for: photo) {
                     displayImage = thumb
+                    displayQuality = "thumbnail"
                 }
                 // Preload initial window
                 let ahead = session.photosAhead(lookaheadCount)

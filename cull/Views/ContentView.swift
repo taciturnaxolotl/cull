@@ -172,8 +172,9 @@ struct ContentView: View {
                     }
                 }
 
+                // Analysis + Thumbnails in parallel (previews loaded after sorting)
                 await withTaskGroup(of: Void.self) { parallelGroup in
-                    // Stream 1: Quality analysis (blur + faces) — low priority to not starve preview/thumbnail loading
+                    // Stream 1: Quality analysis (blur + faces) — low priority
                     parallelGroup.addTask {
                         var completed = 0.0
                         for batchStart in stride(from: 0, to: allPhotos.count, by: 8) {
@@ -191,21 +192,10 @@ struct ContentView: View {
                         }
                     }
 
-                    // Stream 2: Thumbnails — high priority
+                    // Stream 2: Thumbnails
                     parallelGroup.addTask {
                         await c.preloadAllThumbnails(photos: allPhotos) { p in
                             thumbProgress = p
-                            await reportProgress()
-                        }
-                    }
-
-                    // Stream 3: Initial full-res previews — high priority
-                    parallelGroup.addTask {
-                        let ahead = Array(allPhotos.prefix(30))
-                        let behind = Array(allPhotos.suffix(30))
-                        let initialPreviews = ahead + behind.reversed()
-                        await c.preloadAllPreviews(photos: initialPreviews) { p in
-                            previewProgress = p
                             await reportProgress()
                         }
                     }
@@ -215,6 +205,16 @@ struct ContentView: View {
                 for group in groups {
                     let scored = group.photos.map { (photo: $0, score: Self.qualityScore($0, in: group)) }
                     group.photos = scored.sorted { $0.score > $1.score }.map(\.photo)
+                }
+
+                // Preload previews in sorted order so they match browse order
+                let sortedPhotos = groups.flatMap(\.photos)
+                let ahead = Array(sortedPhotos.prefix(30))
+                let behind = Array(sortedPhotos.suffix(30))
+                let initialPreviews = ahead + behind.reversed()
+                await c.preloadAllPreviews(photos: initialPreviews) { p in
+                    previewProgress = p
+                    await reportProgress()
                 }
 
                 await MainActor.run {

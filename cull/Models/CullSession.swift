@@ -16,6 +16,7 @@ final class CullSession {
     var importProgress: Double = 0
     var importStatus: String = ""
 
+    var debugCacheOverlay: Bool = false
     var undoManager: UndoManager?
     var workspace: WorkspaceDB?
     private var saveTask: Task<Void, Never>?

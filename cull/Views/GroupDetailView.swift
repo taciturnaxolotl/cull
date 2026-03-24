@@ -41,6 +41,7 @@ private struct PhotoThumbnail: View {
     let photo: Photo
     let group: PhotoGroup
     let isSelected: Bool
+    @Environment(CullSession.self) private var session
     @Environment(ThumbnailCache.self) private var cache
     @State private var thumbnail: NSImage?
 
@@ -123,6 +124,18 @@ private struct PhotoThumbnail: View {
         .overlay {
             RoundedRectangle(cornerRadius: 6)
                 .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 2)
+        }
+        .overlay(alignment: .topLeading) {
+            if session.debugCacheOverlay {
+                let _ = cache.cacheGeneration
+                let hasPreview = cache.cachedPreview(for: photo) != nil
+                let hasThumb = cache.cachedThumbnail(for: photo) != nil
+                let debugColor: Color = hasPreview ? .green : (hasThumb ? .yellow : .red)
+                Circle()
+                    .fill(debugColor)
+                    .frame(width: 6, height: 6)
+                    .padding(4)
+            }
         }
         .opacity(photo.flag == .reject ? 0.5 : 1.0)
         .onAppear {
