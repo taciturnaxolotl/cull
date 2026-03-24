@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		BB000001SPARKLE00000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = BB000002SPARKLE00000002 /* Sparkle */; };
 		0B0EC2722F72210B004523FA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0B0EC2712F72210B004523FA /* Assets.xcassets */; };
 		0B0EC28A2F722491004523FA /* ImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0EC2872F722491004523FA /* ImportView.swift */; };
 		0B0EC28B2F722491004523FA /* ExportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0EC2842F722491004523FA /* ExportSheet.swift */; };
@@ -28,6 +27,7 @@
 		0B0EC2A52F727789004523FA /* WorkspaceDB.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0EC2A42F727789004523FA /* WorkspaceDB.swift */; };
 		0B0EC2A72F7314F5004523FA /* XMPSidecar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0EC2A62F7314F5004523FA /* XMPSidecar.swift */; };
 		0B0EC2A92F73150B004523FA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0EC2A82F73150B004523FA /* SettingsView.swift */; };
+		BB000001SPARKLE00000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = BB000002SPARKLE00000002 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -370,7 +370,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = sh.dunkirk.cull;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -415,7 +415,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = sh.dunkirk.cull;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
