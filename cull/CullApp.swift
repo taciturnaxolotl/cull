@@ -70,6 +70,15 @@ struct CullApp: App {
                 }
             }
 
+            // View menu
+            CommandMenu("View") {
+                Button("Zoom to Face / Center") {
+                    session.cycleZoom()
+                }
+                .keyboardShortcut(.space, modifiers: [])
+                .disabled(session.selectedPhoto == nil)
+            }
+
             // Navigate menu
             CommandMenu("Navigate") {
                 Button("Next Photo") {

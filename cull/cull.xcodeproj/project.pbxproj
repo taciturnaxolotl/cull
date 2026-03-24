@@ -23,6 +23,7 @@
 		0B0EC2962F722491004523FA /* PhotoImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0EC27E2F722491004523FA /* PhotoImporter.swift */; };
 		0B0EC2972F722491004523FA /* PhotoExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0EC27D2F722491004523FA /* PhotoExporter.swift */; };
 		0B0EC2982F722491004523FA /* ThumbnailCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0EC2812F722491004523FA /* ThumbnailCache.swift */; };
+		0B0EC2A12F72570F004523FA /* icon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 0B0EC2A02F72570F004523FA /* icon.icon */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -43,6 +44,7 @@
 		0B0EC2872F722491004523FA /* ImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportView.swift; sourceTree = "<group>"; };
 		0B0EC2882F722491004523FA /* PhotoViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoViewer.swift; sourceTree = "<group>"; };
 		0B0EC2992F724FE5004523FA /* cull.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = cull.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0B0EC2A02F72570F004523FA /* icon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = icon.icon; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -59,6 +61,7 @@
 		0B0EC2612F722109004523FA = {
 			isa = PBXGroup;
 			children = (
+				0B0EC2A02F72570F004523FA /* icon.icon */,
 				0B0EC2712F72210B004523FA /* Assets.xcassets */,
 				0B0EC2782F722491004523FA /* CullApp.swift */,
 				0B0EC27C2F722491004523FA /* Models */,
@@ -165,6 +168,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0B0EC2722F72210B004523FA /* Assets.xcassets in Resources */,
+				0B0EC2A12F72570F004523FA /* icon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -319,7 +323,7 @@
 		0B0EC2762F72210B004523FA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = icon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -361,7 +365,7 @@
 		0B0EC2772F72210B004523FA /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = icon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;

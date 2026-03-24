@@ -8,6 +8,9 @@ final class CullSession {
     var selectedGroupIndex: Int = 0
     var selectedPhotoIndex: Int = 0
 
+    /// Zoom state: nil = fit, -1 = center zoom, 0+ = face index
+    var zoomFaceIndex: Int? = nil
+
     var isImporting: Bool = false
     var importProgress: Double = 0
     var importStatus: String = ""
@@ -67,6 +70,7 @@ final class CullSession {
 
     func moveToNextGroup() {
         guard !groups.isEmpty else { return }
+        resetZoom()
         saveCursorPosition()
         let start = selectedGroupIndex
         for offset in 1...groups.count {
@@ -81,6 +85,7 @@ final class CullSession {
 
     func moveToPreviousGroup() {
         guard !groups.isEmpty else { return }
+        resetZoom()
         saveCursorPosition()
         let start = selectedGroupIndex
         for offset in 1...groups.count {
@@ -95,6 +100,7 @@ final class CullSession {
 
     func moveToNextPhoto() {
         guard let group = selectedGroup else { return }
+        resetZoom()
         // Try to find next visible photo in current group
         for i in (selectedPhotoIndex + 1)..<group.photos.count {
             if !isPhotoFiltered(group.photos[i]) {
@@ -108,6 +114,7 @@ final class CullSession {
 
     func moveToPreviousPhoto() {
         guard let group = selectedGroup else { return }
+        resetZoom()
         // Try to find previous visible photo in current group
         for i in stride(from: selectedPhotoIndex - 1, through: 0, by: -1) {
             if !isPhotoFiltered(group.photos[i]) {
@@ -130,6 +137,7 @@ final class CullSession {
 
     func selectGroup(at index: Int) {
         guard groups.indices.contains(index) else { return }
+        resetZoom()
         saveCursorPosition()
         selectedGroupIndex = index
         restoreCursorPosition()
@@ -137,6 +145,7 @@ final class CullSession {
 
     func selectPhoto(at index: Int) {
         guard let group = selectedGroup, group.photos.indices.contains(index) else { return }
+        resetZoom()
         selectedPhotoIndex = index
     }
 
@@ -273,5 +282,36 @@ final class CullSession {
     func clearRatingAndFlag() {
         guard let photo = selectedPhoto else { return }
         applyPhotoState(photo, rating: 0, flag: .none, actionName: "Clear Rating & Flag")
+    }
+
+    // MARK: - Zoom
+
+    func cycleZoom() {
+        guard let photo = selectedPhoto else { return }
+        let faces = photo.faceRegions
+
+        switch zoomFaceIndex {
+        case nil:
+            // Currently fit → zoom to first face or center
+            if faces.isEmpty {
+                zoomFaceIndex = -1 // center zoom
+            } else {
+                zoomFaceIndex = 0 // first face
+            }
+        case -1:
+            // Center zoom → back to fit
+            zoomFaceIndex = nil
+        case let idx?:
+            // On a face → next face, or back to fit
+            if idx + 1 < faces.count {
+                zoomFaceIndex = idx + 1
+            } else {
+                zoomFaceIndex = nil
+            }
+        }
+    }
+
+    private func resetZoom() {
+        zoomFaceIndex = nil
     }
 }

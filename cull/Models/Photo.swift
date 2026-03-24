@@ -22,6 +22,8 @@ final class Photo: Identifiable {
     // Populated asynchronously by QualityAnalyzer
     var blurScore: Double?
     var faceQualityScore: Double?
+    /// Normalized face bounding boxes (Vision coordinates: origin bottom-left, 0-1 range)
+    var faceRegions: [CGRect] = []
 
     // Populated by ShotGrouper
     var captureDate: Date?

@@ -57,11 +57,11 @@ struct ContentView: View {
                 await MainActor.run { s.importStatus = "Scanning photos..." }
                 let result = try await PhotoImporter.importFolder(url)
 
+                // Phase 1: Feature print grouping (0-20%)
                 await MainActor.run { s.importStatus = "Grouping similar shots..." }
-                // Phase 1: Feature print grouping (0-30%)
                 var lastReported = 0.0
                 let groups = await ShotGrouper.group(photos: result.photos) { p in
-                    let mapped = p * 0.30
+                    let mapped = p * 0.20
                     guard mapped - lastReported > 0.01 else { return }
                     lastReported = mapped
                     await MainActor.run {
@@ -71,11 +71,30 @@ struct ContentView: View {
                     }
                 }
 
-                await MainActor.run { s.importStatus = "Generating thumbnails..." }
-                // Phase 2: Thumbnails (30-60%)
+                // Phase 2: Quality analysis — blur + faces (20-50%)
+                await MainActor.run { s.importStatus = "Analyzing sharpness & faces..." }
                 let allPhotos = groups.flatMap(\.photos)
-                await c.preloadAllThumbnails(photos: allPhotos) { p in
-                    let mapped = 0.30 + p * 0.30
+                let totalPhotos = Double(allPhotos.count)
+                var analysisCompleted = 0.0
+                for batchStart in stride(from: 0, to: allPhotos.count, by: 4) {
+                    let batch = Array(allPhotos[batchStart..<min(batchStart + 4, allPhotos.count)])
+                    await withTaskGroup(of: Void.self) { group in
+                        for photo in batch {
+                            group.addTask {
+                                let url = photo.pairedURL ?? photo.url
+                                let blur = await QualityAnalyzer.analyzeBlur(imageURL: url)
+                                let faces = await QualityAnalyzer.analyzeFaces(imageURL: url)
+                                await MainActor.run {
+                                    photo.blurScore = blur
+                                    photo.faceQualityScore = faces.quality
+                                    photo.faceRegions = faces.regions
+
+                                }
+                            }
+                        }
+                    }
+                    analysisCompleted += Double(batch.count)
+                    let mapped = 0.20 + (analysisCompleted / totalPhotos) * 0.30
                     await MainActor.run {
                         withAnimation(.linear(duration: 0.2)) {
                             s.importProgress = mapped
@@ -83,13 +102,30 @@ struct ContentView: View {
                     }
                 }
 
+                // Rank photos within each group — best first
+                for group in groups {
+                    let scored = group.photos.map { (photo: $0, score: Self.qualityScore($0, in: group)) }
+                    group.photos = scored.sorted { $0.score > $1.score }.map(\.photo)
+                }
+
+                // Phase 3: Thumbnails (50-75%)
+                await MainActor.run { s.importStatus = "Generating thumbnails..." }
+                await c.preloadAllThumbnails(photos: allPhotos) { p in
+                    let mapped = 0.50 + p * 0.25
+                    await MainActor.run {
+                        withAnimation(.linear(duration: 0.2)) {
+                            s.importProgress = mapped
+                        }
+                    }
+                }
+
+                // Phase 4: Initial full-res previews (75-100%)
                 await MainActor.run { s.importStatus = "Loading previews..." }
-                // Phase 3: Initial full-res previews (60-100%)
                 let ahead = Array(allPhotos.prefix(30))
                 let behind = Array(allPhotos.suffix(30))
                 let initialPreviews = ahead + behind.reversed()
                 await c.preloadAllPreviews(photos: initialPreviews) { p in
-                    let mapped = 0.60 + p * 0.40
+                    let mapped = 0.75 + p * 0.25
                     await MainActor.run {
                         withAnimation(.linear(duration: 0.2)) {
                             s.importProgress = mapped
@@ -103,31 +139,6 @@ struct ContentView: View {
                     s.selectedGroupIndex = 0
                     s.selectedPhotoIndex = 0
                     s.isImporting = false
-                }
-
-                let analysisWork: [(UUID, URL)] = allPhotos.map { ($0.id, $0.pairedURL ?? $0.url) }
-                let photosByID: [UUID: Photo] = Dictionary(uniqueKeysWithValues: allPhotos.map { ($0.id, $0) })
-                Task.detached(priority: .background) {
-                    for batchStart in stride(from: 0, to: analysisWork.count, by: 4) {
-                        let batch = Array(analysisWork[batchStart..<min(batchStart + 4, analysisWork.count)])
-                        await withTaskGroup(of: (UUID, Double?, Double?).self) { group in
-                            for (id, url) in batch {
-                                group.addTask {
-                                    let blur = await QualityAnalyzer.analyzeBlur(imageURL: url)
-                                    let face = await QualityAnalyzer.analyzeFaceQuality(imageURL: url)
-                                    return (id, blur, face)
-                                }
-                            }
-                            for await (id, blur, face) in group {
-                                await MainActor.run {
-                                    if let photo = photosByID[id] {
-                                        photo.blurScore = blur
-                                        photo.faceQualityScore = face
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             } catch {
                 await MainActor.run {
@@ -173,6 +184,7 @@ struct ContentView: View {
             }
             return .ignored
         }
+        .onKeyPress(.space) { session.cycleZoom(); return .handled }
         .onKeyPress(keys: ["e"]) { _ in showExportSheet = true; return .handled }
         .onAppear { isViewerFocused = true }
         .onChange(of: session.selectedGroupIndex) { isViewerFocused = true }
@@ -245,6 +257,37 @@ struct ContentView: View {
             }
         }
     }
+}
+
+extension ContentView {
+    /// Quality score for ranking within a group. Higher = better.
+    static func qualityScore(_ photo: Photo, in group: PhotoGroup) -> Double {
+        var score = 0.0
+        let peers = group.photos
+
+        if let blur = photo.blurScore {
+            let peerBlurs = peers.compactMap(\.blurScore)
+            if let maxB = peerBlurs.max(), let minB = peerBlurs.min(), maxB > minB {
+                score += ((blur - minB) / (maxB - minB)) * 0.5
+            } else {
+                score += 0.25
+            }
+        }
+
+        if let fq = photo.faceQualityScore {
+            score += fq * 0.5
+        } else if let blur = photo.blurScore {
+            let peerBlurs = peers.compactMap(\.blurScore)
+            if let maxB = peerBlurs.max(), let minB = peerBlurs.min(), maxB > minB {
+                score += ((blur - minB) / (maxB - minB)) * 0.5
+            } else {
+                score += 0.25
+            }
+        }
+
+        return score
+    }
+
 }
 
 struct ToolbarFilterButton: View {
