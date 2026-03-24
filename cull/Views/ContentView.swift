@@ -11,17 +11,8 @@ struct ContentView: View {
             if session.sourceFolder == nil {
                 ImportView()
             } else if session.isImporting {
-                VStack(spacing: 16) {
-                    Text("Analyzing photos...")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                    ProgressView(value: session.importProgress)
-                        .frame(width: 300)
-                    Text("\(Int(session.importProgress * 100))%")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ImportProgressView(status: session.importStatus, progress: session.importProgress)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if session.groups.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "photo.badge.exclamationmark")
@@ -59,12 +50,15 @@ struct ContentView: View {
 
         Task {
             do {
+                await MainActor.run { s.importStatus = "Scanning photos..." }
                 let result = try await PhotoImporter.importFolder(url)
 
+                await MainActor.run { s.importStatus = "Grouping similar shots..." }
+                // Phase 1: Feature print grouping (0-30%)
                 var lastReported = 0.0
                 let groups = await ShotGrouper.group(photos: result.photos) { p in
-                    let mapped = p * 0.95
-                    guard mapped - lastReported > 0.02 else { return }
+                    let mapped = p * 0.30
+                    guard mapped - lastReported > 0.01 else { return }
                     lastReported = mapped
                     await MainActor.run {
                         withAnimation(.linear(duration: 0.3)) {
@@ -73,12 +67,11 @@ struct ContentView: View {
                     }
                 }
 
+                await MainActor.run { s.importStatus = "Generating thumbnails..." }
+                // Phase 2: Thumbnails (30-60%)
                 let allPhotos = groups.flatMap(\.photos)
-                var lastCacheReported = 0.95
                 await c.preloadAllThumbnails(photos: allPhotos) { p in
-                    let mapped = 0.95 + p * 0.03
-                    guard mapped - lastCacheReported > 0.005 else { return }
-                    lastCacheReported = mapped
+                    let mapped = 0.30 + p * 0.30
                     await MainActor.run {
                         withAnimation(.linear(duration: 0.2)) {
                             s.importProgress = mapped
@@ -86,14 +79,13 @@ struct ContentView: View {
                     }
                 }
 
+                await MainActor.run { s.importStatus = "Loading previews..." }
+                // Phase 3: Initial full-res previews (60-100%)
                 let ahead = Array(allPhotos.prefix(30))
                 let behind = Array(allPhotos.suffix(30))
                 let initialPreviews = ahead + behind.reversed()
-                var lastPreviewReported = 0.98
                 await c.preloadAllPreviews(photos: initialPreviews) { p in
-                    let mapped = 0.98 + p * 0.02
-                    guard mapped - lastPreviewReported > 0.005 else { return }
-                    lastPreviewReported = mapped
+                    let mapped = 0.60 + p * 0.40
                     await MainActor.run {
                         withAnimation(.linear(duration: 0.2)) {
                             s.importProgress = mapped
@@ -227,6 +219,34 @@ struct ContentView: View {
                     Image(systemName: "folder")
                 }
                 .help("Open Folder")
+            }
+        }
+    }
+}
+
+struct ImportProgressView: View {
+    let status: String
+    let progress: Double
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.4)) { timeline in
+            let base = status.replacingOccurrences(of: "...", with: "")
+            let dotCount = base.isEmpty ? 0 : Int(timeline.date.timeIntervalSinceReferenceDate / 0.4) % 4
+            let visible = String(repeating: ".", count: dotCount)
+            let invisible = String(repeating: ".", count: 3 - dotCount)
+
+            VStack(spacing: 16) {
+                HStack(spacing: 0) {
+                    Text(base + visible)
+                    Text(invisible).hidden()
+                }
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                ProgressView(value: progress)
+                    .frame(width: 300)
+                Text("\(Int(progress * 100))%")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
         }
     }

@@ -21,21 +21,25 @@ struct ShotGrouper {
         let totalWork = Double(photos.count)
         var completed = 0.0
 
-        // Step 2: Generate feature prints for all photos
+        // Step 2: Generate feature prints for all photos (batched to report smooth progress)
+        let fpWork: [(UUID, URL)] = photos.map { ($0.id, $0.pairedURL ?? $0.url) }
         var featurePrintMap: [UUID: VNFeaturePrintObservation] = [:]
-        await withTaskGroup(of: (UUID, VNFeaturePrintObservation?).self) { group in
-            for photo in photos {
-                let id = photo.id
-                group.addTask {
-                    let fp = await generateFeaturePrint(for: photo)
-                    return (id, fp)
+        let batchSize = 8
+        for batchStart in stride(from: 0, to: fpWork.count, by: batchSize) {
+            let batch = Array(fpWork[batchStart..<min(batchStart + batchSize, fpWork.count)])
+            await withTaskGroup(of: (UUID, VNFeaturePrintObservation?).self) { group in
+                for (id, url) in batch {
+                    group.addTask {
+                        let fp = await generateFeaturePrint(url: url)
+                        return (id, fp)
+                    }
                 }
-            }
-            for await (id, fp) in group {
-                if let fp { featurePrintMap[id] = fp }
-                completed += 1
-                if let progress {
-                    await progress(completed / totalWork)
+                for await (id, fp) in group {
+                    if let fp { featurePrintMap[id] = fp }
+                    completed += 1
+                    if let progress {
+                        await progress(completed / totalWork)
+                    }
                 }
             }
         }
@@ -173,8 +177,7 @@ struct ShotGrouper {
         return distance < similarityThreshold
     }
 
-    private static func generateFeaturePrint(for photo: Photo) async -> VNFeaturePrintObservation? {
-        let url = photo.pairedURL ?? photo.url
+    private static func generateFeaturePrint(url: URL) async -> VNFeaturePrintObservation? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
 
         let options: [CFString: Any] = [

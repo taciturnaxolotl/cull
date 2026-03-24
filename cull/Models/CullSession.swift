@@ -10,6 +10,7 @@ final class CullSession {
 
     var isImporting: Bool = false
     var importProgress: Double = 0
+    var importStatus: String = ""
 
     var selectedGroup: PhotoGroup? {
         guard groups.indices.contains(selectedGroupIndex) else { return nil }

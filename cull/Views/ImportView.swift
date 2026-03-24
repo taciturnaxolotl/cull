@@ -14,11 +14,18 @@ struct ImportView: View {
                 .font(.title2)
                 .foregroundStyle(.secondary)
 
-            Button("Choose Folder") {
+            Button {
                 openFolder()
+            } label: {
+                HStack(spacing: 8) {
+                    Text("Open Folder")
+                    Text("\u{2318}O")
+                        .foregroundStyle(.secondary)
+                }
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            .keyboardShortcut("o")
 
             Text("or drag a folder here")
                 .font(.caption)
