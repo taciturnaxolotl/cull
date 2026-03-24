@@ -55,11 +55,48 @@ struct ContentView: View {
         Task {
             do {
                 // Try loading from workspace first
-                if s.openWorkspace(folder: url) {
-                    await MainActor.run { s.importStatus = "Loading from workspace..." }
+                if let wsResult = s.openWorkspace(folder: url) {
                     let allPhotos = s.allPhotos
+                    let newPhotos = wsResult.newPhotos
 
-                    // Still need to load thumbnails and previews
+                    if !newPhotos.isEmpty {
+                        await MainActor.run { s.importStatus = "Analyzing \(newPhotos.count) new photos..." }
+                        // Read metadata for new photos
+                        let formatter = DateFormatter()
+                        formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
+                        formatter.locale = Locale(identifier: "en_US_POSIX")
+                        let metaInputs: [(Int, URL, URL?)] = newPhotos.enumerated().map { (i, p) in
+                            (i, p.url, p.pairedURL)
+                        }
+                        let results = await withTaskGroup(of: (Int, PhotoImporter.PhotoMetadata).self, returning: [(Int, PhotoImporter.PhotoMetadata)].self) { group in
+                            for (index, photoURL, pairedURL) in metaInputs {
+                                group.addTask {
+                                    let meta = PhotoImporter.readAllMetadata(url: photoURL, pairedURL: pairedURL, formatter: formatter)
+                                    return (index, meta)
+                                }
+                            }
+                            var collected: [(Int, PhotoImporter.PhotoMetadata)] = []
+                            for await result in group { collected.append(result) }
+                            return collected
+                        }
+                        for (index, meta) in results {
+                            let photo = newPhotos[index]
+                            photo.captureDate = meta.captureDate
+                            photo.pixelWidth = meta.pixelWidth
+                            photo.pixelHeight = meta.pixelHeight
+                            photo.fileSize = meta.fileSize
+                            photo.pairedPixelWidth = meta.pairedPixelWidth
+                            photo.pairedPixelHeight = meta.pairedPixelHeight
+                            photo.pairedFileSize = meta.pairedFileSize
+                        }
+
+                        // Analyze new photos
+                        for photo in newPhotos {
+                            await QualityAnalyzer.analyze(photo: photo)
+                        }
+                    }
+
+                    // Load thumbnails and previews
                     await MainActor.run { s.importStatus = "Loading thumbnails..." }
                     await c.preloadAllThumbnails(photos: allPhotos) { p in
                         await MainActor.run {
@@ -84,6 +121,9 @@ struct ContentView: View {
                     await MainActor.run {
                         s.importProgress = 1.0
                         s.isImporting = false
+                        if !newPhotos.isEmpty {
+                            s.saveWorkspace()
+                        }
                     }
                     return
                 }

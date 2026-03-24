@@ -128,7 +128,7 @@ struct PhotoImporter {
     }
 
     /// Read all metadata from a single CGImageSource open — date, dimensions, file size, paired metadata
-    nonisolated private static func readAllMetadata(url: URL, pairedURL: URL?, formatter: DateFormatter) -> PhotoMetadata {
+    nonisolated static func readAllMetadata(url: URL, pairedURL: URL?, formatter: DateFormatter) -> PhotoMetadata {
         var meta = PhotoMetadata()
 
         // File size from filesystem
@@ -167,6 +167,63 @@ struct PhotoImporter {
         }
 
         return meta
+    }
+
+    /// Quick file scan — returns (relativePath, Photo) pairs without reading metadata.
+    /// Used by workspace reload to detect new files.
+    static func scanFiles(in folder: URL, recursive: Bool) throws -> [(String, Photo)] {
+        let urls: [URL]
+        if recursive {
+            let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .contentTypeKey]
+            guard let enumerator = FileManager.default.enumerator(
+                at: folder,
+                includingPropertiesForKeys: Array(resourceKeys),
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            ) else {
+                throw ImportError.cannotReadFolder
+            }
+            urls = enumerator.compactMap { $0 as? URL }
+        } else {
+            urls = try FileManager.default.contentsOfDirectory(
+                at: folder,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+        }
+
+        var filesByBasename: [String: [URL]] = [:]
+        for fileURL in urls {
+            let ext = fileURL.pathExtension.lowercased()
+            guard supportedExtensions.contains(ext) else { continue }
+            let basename = fileURL.deletingPathExtension().lastPathComponent
+            filesByBasename[basename, default: []].append(fileURL)
+        }
+
+        var result: [(String, Photo)] = []
+        var processed: Set<URL> = []
+
+        for (_, urls) in filesByBasename {
+            let rawURLs = urls.filter { isRAWExtension($0.pathExtension) }
+            let jpegURLs = urls.filter { isJPEGExtension($0.pathExtension) }
+
+            if let rawURL = rawURLs.first, let jpegURL = jpegURLs.first {
+                let photo = Photo(url: rawURL)
+                photo.pairedURL = jpegURL
+                let relativePath = rawURL.relativePath(from: folder)
+                result.append((relativePath, photo))
+                processed.insert(rawURL)
+                processed.insert(jpegURL)
+            }
+
+            for url in urls where !processed.contains(url) {
+                let photo = Photo(url: url)
+                let relativePath = url.relativePath(from: folder)
+                result.append((relativePath, photo))
+                processed.insert(url)
+            }
+        }
+
+        return result
     }
 
     static func isRAWExtension(_ ext: String) -> Bool {

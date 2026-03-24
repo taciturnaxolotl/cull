@@ -350,14 +350,20 @@ final class CullSession {
         workspace.saveSettings(session: self)
     }
 
-    func openWorkspace(folder: URL) -> Bool {
-        guard let db = WorkspaceDB(folder: folder) else { return false }
+    struct WorkspaceResult {
+        let newPhotos: [Photo]  // photos that need analysis + grouping
+    }
+
+    /// Opens workspace, returns nil if no cached data. Returns new photos that need processing.
+    func openWorkspace(folder: URL) -> WorkspaceResult? {
+        guard let db = WorkspaceDB(folder: folder) else { return nil }
         self.workspace = db
 
-        guard db.hasCachedData else { return false }
+        guard db.hasCachedData else { return nil }
 
         let savedPhotos = db.loadPhotos()
         let groupOrder = db.loadGroupOrder()
+        let savedPaths = Set(savedPhotos.map(\.path))
 
         // Rebuild photos keyed by relative path
         var photosByPath: [String: Photo] = [:]
@@ -386,6 +392,16 @@ final class CullSession {
             photosByPath[saved.path] = photo
         }
 
+        // Scan for new files on disk not in workspace
+        var newPhotos: [Photo] = []
+        if let importResult = try? PhotoImporter.scanFiles(in: folder, recursive: importRecursive) {
+            for (relativePath, photo) in importResult {
+                if !savedPaths.contains(relativePath) {
+                    newPhotos.append(photo)
+                }
+            }
+        }
+
         // Rebuild groups in saved order
         var photosByGroup: [String: [Photo]] = [:]
         for saved in savedPhotos {
@@ -399,14 +415,19 @@ final class CullSession {
             rebuiltGroups.append(PhotoGroup(photos: photos))
         }
 
-        // Add any ungrouped photos (shouldn't happen but safety)
+        // Add any ungrouped saved photos
         let groupedPaths = Set(savedPhotos.compactMap { $0.groupID != nil ? $0.path : nil })
         let ungrouped = photosByPath.filter { !groupedPaths.contains($0.key) }.map(\.value)
         if !ungrouped.isEmpty {
             rebuiltGroups.append(PhotoGroup(photos: ungrouped))
         }
 
-        guard !rebuiltGroups.isEmpty else { return false }
+        // Add new photos as their own group(s) temporarily
+        if !newPhotos.isEmpty {
+            rebuiltGroups.append(PhotoGroup(photos: newPhotos))
+        }
+
+        guard !rebuiltGroups.isEmpty else { return nil }
 
         self.groups = rebuiltGroups
         db.loadSettings(into: self)
@@ -417,6 +438,6 @@ final class CullSession {
             selectedPhotoIndex = min(selectedPhotoIndex, group.photos.count - 1)
         }
 
-        return true
+        return WorkspaceResult(newPhotos: newPhotos)
     }
 }
