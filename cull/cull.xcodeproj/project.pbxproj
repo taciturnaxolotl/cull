@@ -26,7 +26,6 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		0B0EC26A2F722109004523FA /* cull.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = cull.app; path = /Users/kierank/code/personal/cull/cull/build/Debug/cull.app; sourceTree = "<absolute>"; };
 		0B0EC2712F72210B004523FA /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0B0EC2782F722491004523FA /* CullApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CullApp.swift; sourceTree = "<group>"; };
 		0B0EC2792F722491004523FA /* CullSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CullSession.swift; sourceTree = "<group>"; };
@@ -43,6 +42,7 @@
 		0B0EC2862F722491004523FA /* GroupListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupListView.swift; sourceTree = "<group>"; };
 		0B0EC2872F722491004523FA /* ImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportView.swift; sourceTree = "<group>"; };
 		0B0EC2882F722491004523FA /* PhotoViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoViewer.swift; sourceTree = "<group>"; };
+		0B0EC2992F724FE5004523FA /* cull.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = cull.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -64,6 +64,7 @@
 				0B0EC27C2F722491004523FA /* Models */,
 				0B0EC2822F722491004523FA /* Services */,
 				0B0EC2892F722491004523FA /* Views */,
+				0B0EC2992F724FE5004523FA /* cull.app */,
 			);
 			sourceTree = "<group>";
 		};
@@ -121,7 +122,7 @@
 			packageProductDependencies = (
 			);
 			productName = cull;
-			productReference = 0B0EC26A2F722109004523FA /* cull.app */;
+			productReference = 0B0EC2992F724FE5004523FA /* cull.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -326,8 +327,18 @@
 				DEVELOPMENT_TEAM = M67B42LX8D;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -358,8 +369,18 @@
 				DEVELOPMENT_TEAM = M67B42LX8D;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (

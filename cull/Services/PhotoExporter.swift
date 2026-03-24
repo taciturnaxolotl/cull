@@ -15,14 +15,6 @@ enum ExportMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-struct ExportOptions {
-    var destination: URL
-    var fileType: ExportFileType = .both
-    var mode: ExportMode = .copy
-    var minimumRating: Int = 1 // export photos rated >= this
-    var includePickedOnly: Bool = false
-}
-
 struct ExportResult {
     let exported: Int
     let skipped: Int
@@ -30,30 +22,43 @@ struct ExportResult {
 }
 
 struct PhotoExporter {
-    static func export(photos: [Photo], options: ExportOptions) async throws -> ExportResult {
+    /// Export pre-filtered photos to destination
+    static func export(
+        photos: [Photo],
+        destination: URL,
+        fileType: ExportFileType,
+        mode: ExportMode
+    ) async -> ExportResult {
         let fm = FileManager.default
-        try fm.createDirectory(at: options.destination, withIntermediateDirectories: true)
+
+        do {
+            try fm.createDirectory(at: destination, withIntermediateDirectories: true)
+        } catch {
+            return ExportResult(exported: 0, skipped: 0, errors: ["Cannot create destination: \(error.localizedDescription)"])
+        }
 
         var exported = 0
         var skipped = 0
         var errors: [String] = []
 
-        let eligible = photos.filter { photo in
-            if photo.flag == .reject { return false }
-            if options.includePickedOnly { return photo.flag == .pick }
-            return photo.rating >= options.minimumRating
-        }
+        for photo in photos {
+            let urls = urlsForExport(photo: photo, fileType: fileType)
 
-        for photo in eligible {
-            let urlsToExport = urlsForExport(photo: photo, fileType: options.fileType)
+            if urls.isEmpty {
+                skipped += 1
+                continue
+            }
 
-            for sourceURL in urlsToExport {
-                let destURL = options.destination.appendingPathComponent(sourceURL.lastPathComponent)
+            for sourceURL in urls {
+                let accessing = sourceURL.startAccessingSecurityScopedResource()
+                defer { if accessing { sourceURL.stopAccessingSecurityScopedResource() } }
+
+                let destURL = destination.appendingPathComponent(sourceURL.lastPathComponent)
                 do {
                     if fm.fileExists(atPath: destURL.path) {
                         try fm.removeItem(at: destURL)
                     }
-                    switch options.mode {
+                    switch mode {
                     case .copy:
                         try fm.copyItem(at: sourceURL, to: destURL)
                     case .move:
@@ -64,8 +69,6 @@ struct PhotoExporter {
                     errors.append("\(sourceURL.lastPathComponent): \(error.localizedDescription)")
                 }
             }
-
-            skipped += urlsToExport.isEmpty ? 1 : 0
         }
 
         return ExportResult(exported: exported, skipped: skipped, errors: errors)
@@ -78,9 +81,13 @@ struct PhotoExporter {
             if let paired = photo.pairedURL { urls.append(paired) }
             return urls
         case .raw:
-            return photo.isRAW ? [photo.url] : (photo.pairedURL.map { [$0] } ?? [])
+            if photo.isRAW { return [photo.url] }
+            if let paired = photo.pairedURL, PhotoImporter.isRAWExtension(paired.pathExtension) { return [paired] }
+            return []
         case .jpeg:
-            return photo.isJPEG ? [photo.url] : (photo.pairedURL.map { [$0] } ?? [])
+            if photo.isJPEG { return [photo.url] }
+            if let paired = photo.pairedURL, PhotoImporter.isJPEGExtension(paired.pathExtension) { return [paired] }
+            return []
         }
     }
 }

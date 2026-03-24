@@ -9,14 +9,16 @@ struct GroupListView: View {
             ScrollView {
                 LazyVStack(spacing: 2) {
                     ForEach(Array(session.groups.enumerated()), id: \.element.id) { index, group in
-                        GroupThumbnail(
-                            group: group,
-                            index: index,
-                            isSelected: index == session.selectedGroupIndex
-                        )
-                        .id(group.id)
-                        .onTapGesture {
-                            session.selectGroup(at: index)
+                        if group.photos.contains(where: { !session.isPhotoFiltered($0) }) {
+                            GroupThumbnail(
+                                group: group,
+                                index: index,
+                                isSelected: index == session.selectedGroupIndex
+                            )
+                            .id(group.id)
+                            .onTapGesture {
+                                session.selectGroup(at: index)
+                            }
                         }
                     }
                 }

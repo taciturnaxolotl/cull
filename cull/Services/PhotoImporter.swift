@@ -84,12 +84,12 @@ struct PhotoImporter {
         return formatter.date(from: dateString)
     }
 
-    private static func isRAWExtension(_ ext: String) -> Bool {
+    static func isRAWExtension(_ ext: String) -> Bool {
         let raw: Set<String> = ["cr2", "cr3", "arw", "nef", "dng", "raf", "orf", "rw2"]
         return raw.contains(ext.lowercased())
     }
 
-    private static func isJPEGExtension(_ ext: String) -> Bool {
+    static func isJPEGExtension(_ ext: String) -> Bool {
         let jpeg: Set<String> = ["jpg", "jpeg"]
         return jpeg.contains(ext.lowercased())
     }
