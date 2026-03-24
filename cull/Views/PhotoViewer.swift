@@ -6,8 +6,8 @@ struct PhotoViewer: View {
     @State private var displayImage: NSImage?
     @State private var displayedPhotoID: UUID?
 
-    private let lookaheadCount = 50
-    private let lookbehindCount = 50
+    private let lookaheadCount = 30
+    private let lookbehindCount = 30
 
     var body: some View {
         ZStack {

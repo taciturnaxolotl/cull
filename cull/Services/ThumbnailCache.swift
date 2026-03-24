@@ -19,8 +19,7 @@ final class ThumbnailCache {
         memoryCache.countLimit = 500
         memoryCache.totalCostLimit = 100 * 1024 * 1024 // 100 MB
 
-        previewCache.countLimit = 110
-        previewCache.totalCostLimit = 512 * 1024 * 1024 // 512 MB
+        previewCache.countLimit = 70
 
         try? FileManager.default.createDirectory(at: diskCacheURL, withIntermediateDirectories: true)
     }
