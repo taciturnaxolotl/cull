@@ -4,12 +4,30 @@ import SwiftUI
 struct CullApp: App {
     @State private var session = CullSession()
     @State private var thumbnailCache = ThumbnailCache()
+    @AppStorage("recentFolders") private var recentFoldersData: Data = Data()
+
+    private var recentFolders: [URL] {
+        (try? JSONDecoder().decode([String].self, from: recentFoldersData))?.compactMap { URL(fileURLWithPath: $0) } ?? []
+    }
+
+    private func addRecentFolder(_ url: URL) {
+        var paths = (try? JSONDecoder().decode([String].self, from: recentFoldersData)) ?? []
+        paths.removeAll { $0 == url.path }
+        paths.insert(url.path, at: 0)
+        if paths.count > 10 { paths = Array(paths.prefix(10)) }
+        recentFoldersData = (try? JSONEncoder().encode(paths)) ?? Data()
+    }
 
     var body: some Scene {
         WindowGroup("Cull") {
             ContentView()
                 .environment(session)
                 .environment(thumbnailCache)
+                .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { notification in
+                    if let url = notification.object as? URL {
+                        addRecentFolder(url)
+                    }
+                }
         }
         .windowStyle(.automatic)
         .commands {
@@ -19,6 +37,28 @@ struct CullApp: App {
                     openFolder()
                 }
                 .keyboardShortcut("o")
+
+                Toggle("Include Subfolders", isOn: Binding(
+                    get: { session.importRecursive },
+                    set: { session.importRecursive = $0 }
+                ))
+
+                Menu("Open Recent") {
+                    ForEach(recentFolders, id: \.path) { url in
+                        Button(url.lastPathComponent) {
+                            addRecentFolder(url)
+                            NotificationCenter.default.post(name: .openFolder, object: url)
+                        }
+                    }
+
+                    if !recentFolders.isEmpty {
+                        Divider()
+                        Button("Clear Menu") {
+                            recentFoldersData = Data()
+                        }
+                    }
+                }
+                .disabled(recentFolders.isEmpty)
 
                 Divider()
 
