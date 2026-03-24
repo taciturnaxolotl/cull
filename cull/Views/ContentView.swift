@@ -247,7 +247,7 @@ struct ContentView: View {
 
             ToolbarItem(placement: .automatic) {
                 Button { showExportSheet = true } label: {
-                    Image(systemName: "square.and.arrow.up")
+                    Image(systemName: "square.and.arrow.up.on.square")
                 }
                 .help("Export (E)")
             }
