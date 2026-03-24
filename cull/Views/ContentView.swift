@@ -179,26 +179,45 @@ struct ContentView: View {
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 HStack(spacing: 4) {
-                    Button { session.togglePick() } label: {
-                        Image(systemName: "checkmark.circle")
-                    }
-                    .help("Pick (P)")
+                    ToolbarFilterButton(
+                        activeIcon: "checkmark.circle.fill",
+                        inactiveIcon: "checkmark.circle",
+                        isActive: session.selectedPhoto?.flag == .pick,
+                        isFiltered: session.hidePicks,
+                        activeColor: .green,
+                        action: { session.togglePick() },
+                        filterAction: { session.togglePickFilter() },
+                        help: "Pick (P) · ⌘Click to filter"
+                    )
 
-                    Button { session.toggleReject() } label: {
-                        Image(systemName: "xmark.circle")
-                    }
-                    .help("Reject (X)")
+                    ToolbarFilterButton(
+                        activeIcon: "xmark.circle.fill",
+                        inactiveIcon: "xmark.circle",
+                        isActive: session.selectedPhoto?.flag == .reject,
+                        isFiltered: session.hideRejects,
+                        activeColor: .red,
+                        action: { session.toggleReject() },
+                        filterAction: { session.toggleRejectFilter() },
+                        help: "Reject (X) · ⌘Click to filter"
+                    )
                 }
             }
 
             ToolbarItem(placement: .automatic) {
                 HStack(spacing: 2) {
                     ForEach(1...5, id: \.self) { star in
-                        Button { session.setRating(star) } label: {
-                            Image(systemName: star <= (session.selectedPhoto?.rating ?? 0) ? "star.fill" : "star")
-                                .foregroundStyle(star <= (session.selectedPhoto?.rating ?? 0) ? .yellow : .secondary)
-                        }
-                        .help("Rate \(star)")
+                        let isActive = star <= (session.selectedPhoto?.rating ?? 0)
+                        let isFiltered = session.hiddenRatings.contains(star)
+                        ToolbarFilterButton(
+                            activeIcon: "star.fill",
+                            inactiveIcon: "star",
+                            isActive: isActive,
+                            isFiltered: isFiltered,
+                            activeColor: .yellow,
+                            action: { session.setRating(star) },
+                            filterAction: { session.toggleRatingFilter(star) },
+                            help: "Rate \(star) · ⌘Click to filter"
+                        )
                     }
                 }
             }
@@ -221,6 +240,42 @@ struct ContentView: View {
                 .help("Open Folder")
             }
         }
+    }
+}
+
+struct ToolbarFilterButton: View {
+    let activeIcon: String
+    let inactiveIcon: String
+    let isActive: Bool
+    let isFiltered: Bool
+    let activeColor: Color
+    let action: () -> Void
+    let filterAction: () -> Void
+    let help: String
+
+    init(activeIcon: String, inactiveIcon: String, isActive: Bool, isFiltered: Bool, activeColor: Color, action: @escaping () -> Void, filterAction: @escaping () -> Void, help: String) {
+        self.activeIcon = activeIcon
+        self.inactiveIcon = inactiveIcon
+        self.isActive = isActive
+        self.isFiltered = isFiltered
+        self.activeColor = activeColor
+        self.action = action
+        self.filterAction = filterAction
+        self.help = help
+    }
+
+    var body: some View {
+        Button {
+            if NSEvent.modifierFlags.contains(.command) {
+                filterAction()
+            } else {
+                action()
+            }
+        } label: {
+            Image(systemName: isActive ? activeIcon : inactiveIcon)
+                .foregroundStyle(isFiltered ? Color.gray.opacity(0.3) : (isActive ? activeColor : Color.secondary))
+        }
+        .help(help)
     }
 }
 

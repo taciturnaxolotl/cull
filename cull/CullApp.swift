@@ -97,6 +97,7 @@ struct CullApp: App {
                 }
                 .keyboardShortcut(.leftArrow, modifiers: [])
                 .disabled(session.groups.isEmpty)
+
             }
         }
     }

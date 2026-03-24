@@ -10,13 +10,15 @@ struct GroupDetailView: View {
                 if let group = session.selectedGroup {
                     LazyVStack(spacing: 2) {
                         ForEach(Array(group.photos.enumerated()), id: \.element.id) { index, photo in
-                            PhotoThumbnail(
-                                photo: photo,
-                                isSelected: index == session.selectedPhotoIndex
-                            )
-                            .id(photo.id)
-                            .onTapGesture {
-                                session.selectPhoto(at: index)
+                            if !session.isPhotoFiltered(photo) {
+                                PhotoThumbnail(
+                                    photo: photo,
+                                    isSelected: index == session.selectedPhotoIndex
+                                )
+                                .id(photo.id)
+                                .onTapGesture {
+                                    session.selectPhoto(at: index)
+                                }
                             }
                         }
                     }
