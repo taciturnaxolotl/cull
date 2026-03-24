@@ -25,6 +25,8 @@
 		0B0EC2982F722491004523FA /* ThumbnailCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0EC2812F722491004523FA /* ThumbnailCache.swift */; };
 		0B0EC2A12F72570F004523FA /* icon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 0B0EC2A02F72570F004523FA /* icon.icon */; };
 		0B0EC2A52F727789004523FA /* WorkspaceDB.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0EC2A42F727789004523FA /* WorkspaceDB.swift */; };
+		0B0EC2A72F7314F5004523FA /* XMPSidecar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0EC2A62F7314F5004523FA /* XMPSidecar.swift */; };
+		0B0EC2A92F73150B004523FA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0EC2A82F73150B004523FA /* SettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -47,6 +49,8 @@
 		0B0EC2992F724FE5004523FA /* cull.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = cull.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0B0EC2A02F72570F004523FA /* icon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = icon.icon; sourceTree = "<group>"; };
 		0B0EC2A42F727789004523FA /* WorkspaceDB.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceDB.swift; sourceTree = "<group>"; };
+		0B0EC2A62F7314F5004523FA /* XMPSidecar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XMPSidecar.swift; sourceTree = "<group>"; };
+		0B0EC2A82F73150B004523FA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -86,6 +90,7 @@
 		0B0EC2822F722491004523FA /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				0B0EC2A62F7314F5004523FA /* XMPSidecar.swift */,
 				0B0EC2A42F727789004523FA /* WorkspaceDB.swift */,
 				0B0EC27D2F722491004523FA /* PhotoExporter.swift */,
 				0B0EC27E2F722491004523FA /* PhotoImporter.swift */,
@@ -99,6 +104,7 @@
 		0B0EC2892F722491004523FA /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				0B0EC2A82F73150B004523FA /* SettingsView.swift */,
 				0B0EC2832F722491004523FA /* ContentView.swift */,
 				0B0EC2842F722491004523FA /* ExportSheet.swift */,
 				0B0EC2852F722491004523FA /* GroupDetailView.swift */,
@@ -185,6 +191,8 @@
 				0B0EC28A2F722491004523FA /* ImportView.swift in Sources */,
 				0B0EC2A52F727789004523FA /* WorkspaceDB.swift in Sources */,
 				0B0EC28B2F722491004523FA /* ExportSheet.swift in Sources */,
+				0B0EC2A92F73150B004523FA /* SettingsView.swift in Sources */,
+				0B0EC2A72F7314F5004523FA /* XMPSidecar.swift in Sources */,
 				0B0EC28C2F722491004523FA /* ShotGrouper.swift in Sources */,
 				0B0EC28D2F722491004523FA /* Photo.swift in Sources */,
 				0B0EC28E2F722491004523FA /* GroupListView.swift in Sources */,
@@ -348,6 +356,8 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Cull;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -390,6 +400,8 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Cull;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

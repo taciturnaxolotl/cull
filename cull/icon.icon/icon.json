@@ -1,9 +1,7 @@
 {
   "fill-specializations" : [
     {
-      "value" : {
-        "solid" : "display-p3:0.12880,0.13019,0.13434,1.00000"
-      }
+      "value" : "system-dark"
     },
     {
       "appearance" : "dark",
@@ -16,41 +14,29 @@
     {
       "layers" : [
         {
-          "blend-mode" : "normal",
-          "fill" : "none",
-          "glass" : true,
-          "hidden" : false,
-          "image-name" : "emoji_u1f52a 1.svg",
-          "name" : "emoji_u1f52a 1",
-          "opacity" : 1,
+          "fill" : {
+            "linear-gradient" : [
+              "display-p3:1.00000,0.12046,0.22478,1.00000",
+              "display-p3:0.50511,0.67153,0.96783,1.00000"
+            ],
+            "orientation" : {
+              "start" : {
+                "x" : 0.5,
+                "y" : 0
+              },
+              "stop" : {
+                "x" : 0.5652511760752689,
+                "y" : 0.8858258928571429
+              }
+            }
+          },
+          "image-name" : "C.png",
+          "name" : "C",
           "position" : {
             "scale" : 1,
             "translation-in-points" : [
-              -97.0625,
-              -105.04424700203003
-            ]
-          }
-        },
-        {
-          "image-name" : "emoji_u1f39e 1 (1).svg",
-          "name" : "emoji_u1f39e 1 (1)",
-          "position" : {
-            "scale" : 1.23,
-            "translation-in-points" : [
-              -0.7779750000000831,
-              23.765625
-            ]
-          }
-        },
-        {
-          "glass" : true,
-          "image-name" : "Subtract.svg",
-          "name" : "Subtract",
-          "position" : {
-            "scale" : 1.07,
-            "translation-in-points" : [
-              0.4913672408982279,
-              106.2578125
+              0,
+              0
             ]
           }
         }

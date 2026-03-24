@@ -37,7 +37,8 @@ struct PhotoExporter {
         destination: URL,
         fileType: ExportFileType,
         mode: ExportMode,
-        folderStructure: ExportFolderStructure = .flat
+        folderStructure: ExportFolderStructure = .flat,
+        includeXMP: Bool = true
     ) async -> ExportResult {
         let fm = FileManager.default
 
@@ -90,7 +91,23 @@ struct PhotoExporter {
                     errors.append("\(sourceURL.lastPathComponent): \(error.localizedDescription)")
                 }
             }
-            if photoExported { exported += 1 }
+            if photoExported {
+                exported += 1
+                if includeXMP {
+                    let primaryURL = urls.first!
+                    let subfolder = subfolder(for: primaryURL, photo: photo, structure: folderStructure)
+                    let destDir = subfolder.isEmpty ? destination : destination.appendingPathComponent(subfolder)
+                    let xmpName = primaryURL.deletingPathExtension().lastPathComponent + ".xmp"
+                    let xmpDest = destDir.appendingPathComponent(xmpName)
+                    let xmpRating = photo.flag == .reject ? -1 : photo.rating
+                    let xmpContent = XMPSidecar.freshXMP(rating: xmpRating)
+                    do {
+                        try xmpContent.data(using: .utf8)?.write(to: xmpDest)
+                    } catch {
+                        errors.append("\(xmpName): XMP write failed — \(error.localizedDescription)")
+                    }
+                }
+            }
         }
 
         return ExportResult(exported: exported, skipped: skipped, errors: errors)

@@ -112,6 +112,13 @@ struct PhotoImporter {
 
         photos.sort { ($0.captureDate ?? .distantPast) < ($1.captureDate ?? .distantPast) }
 
+        // Read existing XMP sidecars
+        for photo in photos {
+            if let meta = XMPSidecar.read(for: photo.url) {
+                XMPSidecar.apply(meta, to: photo)
+            }
+        }
+
         return ImportResult(photos: photos, paired: pairedCount)
     }
 

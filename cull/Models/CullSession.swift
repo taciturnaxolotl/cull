@@ -3,6 +3,11 @@ import SwiftUI
 
 @Observable
 final class CullSession {
+    /// Whether XMP sidecars are auto-written on rating/flag changes (mirrors @AppStorage)
+    var autoWriteXMP: Bool {
+        get { UserDefaults.standard.object(forKey: "autoWriteXMP") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "autoWriteXMP") }
+    }
     var sourceFolder: URL?
     var groups: [PhotoGroup] = []
     var selectedGroupIndex: Int = 0
@@ -267,6 +272,9 @@ final class CullSession {
         }
         undoManager?.setActionName(actionName)
         scheduleSave()
+        if autoWriteXMP {
+            XMPSidecar.write(photo)
+        }
     }
 
     func setRating(_ rating: Int) {

@@ -5,6 +5,7 @@ struct CullApp: App {
     @State private var session = CullSession()
     @State private var thumbnailCache = ThumbnailCache()
     @AppStorage("recentFolders") private var recentFoldersData: Data = Data()
+    @AppStorage("importRecursive") private var importRecursive: Bool = true
 
     private var recentFolders: [URL] {
         (try? JSONDecoder().decode([String].self, from: recentFoldersData))?.compactMap { URL(fileURLWithPath: $0) } ?? []
@@ -28,6 +29,9 @@ struct CullApp: App {
                         addRecentFolder(url)
                     }
                 }
+                .onAppear {
+                    session.importRecursive = importRecursive
+                }
         }
         .windowStyle(.automatic)
         .commands {
@@ -39,8 +43,11 @@ struct CullApp: App {
                 .keyboardShortcut("o")
 
                 Toggle("Include Subfolders", isOn: Binding(
-                    get: { session.importRecursive },
-                    set: { session.importRecursive = $0 }
+                    get: { importRecursive },
+                    set: { newValue in
+                        importRecursive = newValue
+                        session.importRecursive = newValue
+                    }
                 ))
 
                 Menu("Open Recent") {
@@ -160,6 +167,10 @@ struct CullApp: App {
                 .disabled(session.groups.isEmpty)
 
             }
+        }
+
+        Settings {
+            SettingsView()
         }
     }
 

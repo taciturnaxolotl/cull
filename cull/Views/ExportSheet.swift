@@ -11,6 +11,7 @@ struct ExportSheet: View {
     @State private var isExporting: Bool = false
     @State private var result: ExportResult?
     @State private var useCurrentFilters: Bool = true
+    @State private var includeXMP: Bool = true
 
     private var eligiblePhotos: [Photo] {
         if useCurrentFilters {
@@ -26,6 +27,7 @@ struct ExportSheet: View {
 
             Form {
                 Toggle("Export only visible photos", isOn: $useCurrentFilters)
+                Toggle("Include XMP sidecars", isOn: $includeXMP)
 
                 Picker("File Type", selection: $fileType) {
                     ForEach(ExportFileType.allCases) { type in
@@ -132,7 +134,8 @@ struct ExportSheet: View {
                 destination: destination,
                 fileType: fileType,
                 mode: exportMode,
-                folderStructure: folderStructure
+                folderStructure: folderStructure,
+                includeXMP: includeXMP
             )
             await MainActor.run {
                 result = exportResult
