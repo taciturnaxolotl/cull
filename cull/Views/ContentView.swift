@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @Environment(CullSession.self) private var session
     @Environment(ThumbnailCache.self) private var cache
+    @Environment(\.undoManager) private var windowUndoManager
     @State private var showExportSheet = false
     @FocusState private var isViewerFocused: Bool
 
@@ -35,6 +36,9 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .showExport)) { _ in
             showExportSheet = true
+        }
+        .onAppear {
+            session.undoManager = windowUndoManager
         }
     }
 

@@ -12,6 +12,8 @@ final class CullSession {
     var importProgress: Double = 0
     var importStatus: String = ""
 
+    var undoManager: UndoManager?
+
     // Remember cursor position per group
     private var groupCursorPositions: [UUID: Int] = [:]
 
@@ -237,27 +239,39 @@ final class CullSession {
 
     // MARK: - Culling Actions
 
+    private func applyPhotoState(_ photo: Photo, rating: Int, flag: PhotoFlag, actionName: String) {
+        let oldRating = photo.rating
+        let oldFlag = photo.flag
+        photo.rating = rating
+        photo.flag = flag
+        undoManager?.registerUndo(withTarget: self) { session in
+            session.applyPhotoState(photo, rating: oldRating, flag: oldFlag, actionName: actionName)
+        }
+        undoManager?.setActionName(actionName)
+    }
+
     func setRating(_ rating: Int) {
-        guard (1...5).contains(rating) else { return }
-        selectedPhoto?.rating = rating
+        guard (1...5).contains(rating), let photo = selectedPhoto else { return }
+        applyPhotoState(photo, rating: rating, flag: photo.flag, actionName: "Set Rating \(rating)")
         ensureVisibleSelection()
     }
 
     func togglePick() {
         guard let photo = selectedPhoto else { return }
-        photo.flag = photo.flag == .pick ? .none : .pick
+        let newFlag: PhotoFlag = photo.flag == .pick ? .none : .pick
+        applyPhotoState(photo, rating: photo.rating, flag: newFlag, actionName: newFlag == .pick ? "Pick" : "Remove Pick")
         ensureVisibleSelection()
     }
 
     func toggleReject() {
         guard let photo = selectedPhoto else { return }
-        photo.flag = photo.flag == .reject ? .none : .reject
+        let newFlag: PhotoFlag = photo.flag == .reject ? .none : .reject
+        applyPhotoState(photo, rating: photo.rating, flag: newFlag, actionName: newFlag == .reject ? "Reject" : "Remove Reject")
         ensureVisibleSelection()
     }
 
     func clearRatingAndFlag() {
         guard let photo = selectedPhoto else { return }
-        photo.rating = 0
-        photo.flag = .none
+        applyPhotoState(photo, rating: 0, flag: .none, actionName: "Clear Rating & Flag")
     }
 }
