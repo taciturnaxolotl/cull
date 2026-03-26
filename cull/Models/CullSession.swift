@@ -221,43 +221,26 @@ final class CullSession {
 
     // MARK: - Lookahead
 
-    /// Returns the next N photos from the current position, wrapping around to start
+    /// Returns the next N visible (unfiltered) photos from the current position, wrapping around to start
     func photosAhead(_ count: Int) -> [Photo] {
-        let all = allPhotos
-        guard !all.isEmpty else { return [] }
-        guard let currentIndex = flatIndex else { return [] }
-        var result: [Photo] = []
-        for i in 1...min(count, all.count - 1) {
-            result.append(all[(currentIndex + i) % all.count])
+        let visible = allPhotos.filter { !isPhotoFiltered($0) }
+        guard !visible.isEmpty, count > 0 else { return [] }
+        guard let current = selectedPhoto,
+              let visibleIndex = visible.firstIndex(where: { $0.id == current.id }) else { return [] }
+        return (1...min(count, visible.count - 1)).map { i in
+            visible[(visibleIndex + i) % visible.count]
         }
-        return result
     }
 
-    /// Returns the previous N photos from the current position, wrapping around to end
+    /// Returns the previous N visible (unfiltered) photos from the current position, wrapping around to end
     func photosBehind(_ count: Int) -> [Photo] {
-        let all = allPhotos
-        guard !all.isEmpty else { return [] }
-        guard let currentIndex = flatIndex else { return [] }
-        var result: [Photo] = []
-        for i in 1...min(count, all.count - 1) {
-            result.append(all[(currentIndex - i + all.count) % all.count])
+        let visible = allPhotos.filter { !isPhotoFiltered($0) }
+        guard !visible.isEmpty, count > 0 else { return [] }
+        guard let current = selectedPhoto,
+              let visibleIndex = visible.firstIndex(where: { $0.id == current.id }) else { return [] }
+        return (1...min(count, visible.count - 1)).map { i in
+            visible[(visibleIndex - i + visible.count) % visible.count]
         }
-        return result
-    }
-
-    /// Current photo's index in the flat allPhotos array
-    private var flatIndex: Int? {
-        guard selectedPhoto != nil else { return nil }
-        var idx = 0
-        for gi in 0..<groups.count {
-            for pi in 0..<groups[gi].photos.count {
-                if gi == selectedGroupIndex && pi == selectedPhotoIndex {
-                    return idx
-                }
-                idx += 1
-            }
-        }
-        return nil
     }
 
     // MARK: - Culling Actions
@@ -347,9 +330,7 @@ final class CullSession {
 
     func saveWorkspace() {
         guard let workspace, let sourceFolder else { return }
-        let allPhotos = groups.flatMap(\.photos)
-        workspace.savePhotos(allPhotos, sourceFolder: sourceFolder)
-        workspace.saveGroups(groups, sourceFolder: sourceFolder)
+        workspace.savePhotosAndGroups(groups, sourceFolder: sourceFolder)
         workspace.saveSettings(session: self)
     }
 

@@ -70,9 +70,13 @@ final class WorkspaceDB: @unchecked Sendable {
 
     // MARK: - Save
 
-    func savePhotos(_ photos: [Photo], sourceFolder: URL) {
+    func savePhotosAndGroups(_ groups: [PhotoGroup], sourceFolder: URL) {
+        // Photos and groups are saved in a single transaction so group_id is always consistent.
+        // The old two-step approach (savePhotos with NULL group_id, then saveGroups updating them)
+        // could lose all group assignments if the process was killed between the two writes.
         exec("BEGIN TRANSACTION")
-        let stmt = prepare("""
+
+        let photoStmt = prepare("""
             INSERT OR REPLACE INTO photos
             (path, paired_path, rating, flag, blur_score, face_sharpness, face_regions,
              pixel_width, pixel_height, file_size,
@@ -80,61 +84,42 @@ final class WorkspaceDB: @unchecked Sendable {
              eye_aspect_ratios)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """)
-        defer { sqlite3_finalize(stmt) }
+        defer { sqlite3_finalize(photoStmt) }
 
-        for photo in photos {
-            let relativePath = photo.url.relativePath(from: sourceFolder)
-            let pairedPath = photo.pairedURL?.relativePath(from: sourceFolder)
-            let flagStr = flagToString(photo.flag)
-            let regionsJSON = encodeRegions(photo.faceRegions)
-
-            sqlite3_reset(stmt)
-            bind(stmt, 1, relativePath)
-            bind(stmt, 2, pairedPath)
-            bind(stmt, 3, photo.rating)
-            bind(stmt, 4, flagStr)
-            bind(stmt, 5, photo.blurScore)
-            bind(stmt, 6, photo.faceSharpness)
-            bind(stmt, 7, regionsJSON)
-            bind(stmt, 8, photo.pixelWidth)
-            bind(stmt, 9, photo.pixelHeight)
-            bind(stmt, 10, photo.fileSize)
-            bind(stmt, 11, photo.pairedPixelWidth)
-            bind(stmt, 12, photo.pairedPixelHeight)
-            bind(stmt, 13, photo.pairedFileSize)
-            bind(stmt, 14, photo.captureDate?.timeIntervalSinceReferenceDate)
-            bind(stmt, 15, nil as String?) // group_id set separately
-            bind(stmt, 16, encodeDoubles(photo.eyeAspectRatios))
-            sqlite3_step(stmt)
-        }
-        exec("COMMIT")
-    }
-
-    func saveGroups(_ groups: [PhotoGroup], sourceFolder: URL) {
-        exec("BEGIN TRANSACTION")
-        exec("DELETE FROM groups")
-
-        let groupStmt = prepare("INSERT INTO groups (group_id, sort_order) VALUES (?,?)")
-        let photoStmt = prepare("UPDATE photos SET group_id = ? WHERE path = ?")
-        defer {
-            sqlite3_finalize(groupStmt)
-            sqlite3_finalize(photoStmt)
-        }
-
-        for (i, group) in groups.enumerated() {
-            let groupID = group.id.uuidString
-            sqlite3_reset(groupStmt)
-            bind(groupStmt, 1, groupID)
-            bind(groupStmt, 2, i)
-            sqlite3_step(groupStmt)
-
+        for group in groups {
             for photo in group.photos {
+                let relativePath = photo.url.relativePath(from: sourceFolder)
                 sqlite3_reset(photoStmt)
-                bind(photoStmt, 1, groupID)
-                bind(photoStmt, 2, photo.url.relativePath(from: sourceFolder))
+                bind(photoStmt, 1, relativePath)
+                bind(photoStmt, 2, photo.pairedURL?.relativePath(from: sourceFolder))
+                bind(photoStmt, 3, photo.rating)
+                bind(photoStmt, 4, flagToString(photo.flag))
+                bind(photoStmt, 5, photo.blurScore)
+                bind(photoStmt, 6, photo.faceSharpness)
+                bind(photoStmt, 7, encodeRegions(photo.faceRegions))
+                bind(photoStmt, 8, photo.pixelWidth)
+                bind(photoStmt, 9, photo.pixelHeight)
+                bind(photoStmt, 10, photo.fileSize)
+                bind(photoStmt, 11, photo.pairedPixelWidth)
+                bind(photoStmt, 12, photo.pairedPixelHeight)
+                bind(photoStmt, 13, photo.pairedFileSize)
+                bind(photoStmt, 14, photo.captureDate?.timeIntervalSinceReferenceDate)
+                bind(photoStmt, 15, group.id.uuidString)
+                bind(photoStmt, 16, encodeDoubles(photo.eyeAspectRatios))
                 sqlite3_step(photoStmt)
             }
         }
+
+        exec("DELETE FROM groups")
+        let groupStmt = prepare("INSERT INTO groups (group_id, sort_order) VALUES (?,?)")
+        defer { sqlite3_finalize(groupStmt) }
+        for (i, group) in groups.enumerated() {
+            sqlite3_reset(groupStmt)
+            bind(groupStmt, 1, group.id.uuidString)
+            bind(groupStmt, 2, i)
+            sqlite3_step(groupStmt)
+        }
+
         exec("COMMIT")
     }
 
