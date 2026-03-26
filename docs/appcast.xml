@@ -5,5 +5,23 @@
     <link>https://taciturnaxolotl.github.io/cull/appcast.xml</link>
     <description>Most recent updates to Cull</description>
     <language>en</language>
+    <item>
+      <title>Version 0.1.1</title>
+      <pubDate>Thu, 26 Mar 2026 15:50:24 +0000</pubDate>
+      <sparkle:version>0.1.1</sparkle:version>
+      <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<h2>Bug Fixes</h2>
+<ul>
+  <li><b>Filter-aware cache preloading</b>: The preview preload window now only includes visible (unfiltered) photos. Previously, filtered-out photos were being loaded into the cache and evicting previews you actually needed.</li>
+  <li><b>Atomic workspace save</b>: Fixed a data-loss bug where group assignments could be wiped if the app was killed between two separate SQLite writes. Photos and groups are now saved in a single transaction, so <code>group_id</code> is always consistent — resolving the issue where photos from unrelated shoots would get lumped into one group after restarting with filters active.</li>
+</ul>]]></description>
+      <enclosure
+        url="https://github.com/taciturnaxolotl/cull/releases/download/0.1.1/Cull-0.1.1-macOS.dmg"
+        sparkle:edSignature="O7V19Xy0Q37sk/iEi+lv/ydmMhmZZHoaTWhUw0Hr2L5CTyxtoKfFMh3HRAJ/X/6jlQzexSPxK1Gcw3ovtXz9Bg=="
+        length="3993047"
+        type="application/octet-stream"
+        sparkle:os="macos"/>
+    </item>
   </channel>
 </rss>
