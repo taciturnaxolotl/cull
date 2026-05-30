@@ -155,6 +155,7 @@ final class ThumbnailCache {
         Task.detached(priority: .utility) {
             for batchStart in stride(from: 0, to: work.count, by: 8) {
                 let batch = Array(work[batchStart..<min(batchStart + 8, work.count)])
+                var batchKeys: [String] = []
                 await withTaskGroup(of: (String, NSImage?).self) { group in
                     for (key, loadURL, cacheKeyURL) in batch {
                         let diskPath = diskCache.appendingPathComponent(Self.stableDiskKey(for: cacheKeyURL))
@@ -173,7 +174,16 @@ final class ThumbnailCache {
                         if let image {
                             // NSCache is thread-safe, no need for MainActor
                             mc.setObject(image, forKey: key as NSString)
+                            batchKeys.append(key)
                         }
+                    }
+                }
+                // Key tracking and generation bump must happen on MainActor
+                if !batchKeys.isEmpty {
+                    await MainActor.run { [weak self] in
+                        guard let self else { return }
+                        for k in batchKeys { self.thumbnailKeys.insert(k) }
+                        self.cacheGeneration += 1
                     }
                 }
             }

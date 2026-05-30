@@ -97,16 +97,18 @@ struct PhotoImporter {
                 }
                 return collected
             }
-            // Apply on main actor
-            for (index, meta) in results {
-                let photo = photos[index]
-                photo.captureDate = meta.captureDate
-                photo.pixelWidth = meta.pixelWidth
-                photo.pixelHeight = meta.pixelHeight
-                photo.fileSize = meta.fileSize
-                photo.pairedPixelWidth = meta.pairedPixelWidth
-                photo.pairedPixelHeight = meta.pairedPixelHeight
-                photo.pairedFileSize = meta.pairedFileSize
+            // Apply metadata on main actor (@Observable Photo requires it)
+            await MainActor.run {
+                for (index, meta) in results {
+                    let photo = photos[index]
+                    photo.captureDate = meta.captureDate
+                    photo.pixelWidth = meta.pixelWidth
+                    photo.pixelHeight = meta.pixelHeight
+                    photo.fileSize = meta.fileSize
+                    photo.pairedPixelWidth = meta.pairedPixelWidth
+                    photo.pairedPixelHeight = meta.pairedPixelHeight
+                    photo.pairedFileSize = meta.pairedFileSize
+                }
             }
         }
 

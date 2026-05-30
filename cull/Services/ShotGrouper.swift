@@ -147,8 +147,9 @@ struct ShotGrouper {
                               areGroupsVisuallySimilar(previous, current, featurePrintMap: featurePrintMap)
 
             if shouldMerge {
-                // Merge into previous
-                previous.photos.append(contentsOf: current.photos)
+                // Build a new group with combined photos instead of mutating the existing one
+                let combined = PhotoGroup(photos: previous.photos + current.photos)
+                merged[merged.count - 1] = combined
             } else {
                 merged.append(current)
             }
