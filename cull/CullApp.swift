@@ -86,8 +86,7 @@ struct CullApp: App {
                 Divider()
 
                 Button("Close Folder") {
-                    session.sourceFolder = nil
-                    session.groups = []
+                    session.closeSourceFolder()
                     thumbnailCache.clearCache()
                 }
                 .keyboardShortcut("w")

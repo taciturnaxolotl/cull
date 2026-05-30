@@ -8,7 +8,17 @@ final class CullSession {
         get { UserDefaults.standard.object(forKey: "autoWriteXMP") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "autoWriteXMP") }
     }
-    var sourceFolder: URL?
+    var sourceFolder: URL? {
+        didSet {
+            // Stop access on old folder
+            if let oldValue, sourceFolderAccessActive {
+                oldValue.stopAccessingSecurityScopedResource()
+                sourceFolderAccessActive = false
+            }
+        }
+    }
+    /// Whether we currently hold security-scoped access on sourceFolder
+    private var sourceFolderAccessActive = false
     var groups: [PhotoGroup] = []
     var selectedGroupIndex: Int = 0
     var selectedPhotoIndex: Int = 0
@@ -314,6 +324,25 @@ final class CullSession {
 
     private func resetZoom() {
         zoomFaceIndex = nil
+    }
+
+    // MARK: - Security-scoped folder access
+
+    /// Open a folder with security-scoped access. Call this instead of setting sourceFolder directly.
+    func openSourceFolder(_ url: URL) {
+        _ = url.startAccessingSecurityScopedResource()
+        sourceFolderAccessActive = true
+        sourceFolder = url
+    }
+
+    /// Close the current folder, releasing security-scoped access.
+    func closeSourceFolder() {
+        if let folder = sourceFolder, sourceFolderAccessActive {
+            folder.stopAccessingSecurityScopedResource()
+            sourceFolderAccessActive = false
+        }
+        sourceFolder = nil
+        groups = []
     }
 
     // MARK: - Workspace persistence

@@ -22,7 +22,7 @@ struct ContentView: View {
                     Text("No supported photos found")
                         .font(.title3)
                         .foregroundStyle(.secondary)
-                    Button("Choose Another Folder") { session.sourceFolder = nil }
+                    Button("Choose Another Folder") { session.closeSourceFolder() }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -48,7 +48,7 @@ struct ContentView: View {
 
     @MainActor
     private func startImport(_ url: URL) {
-        session.sourceFolder = url
+        session.openSourceFolder(url)
         session.isImporting = true
         session.importProgress = 0.02
         cache.clearCache()
@@ -227,7 +227,7 @@ struct ContentView: View {
                 }
             } catch {
                 await MainActor.run {
-                    s.sourceFolder = nil
+                    s.closeSourceFolder()
                     s.isImporting = false
                 }
             }
@@ -470,7 +470,7 @@ struct ContentView: View {
             }
 
             ToolbarItem(placement: .automatic) {
-                Button { session.sourceFolder = nil } label: {
+                Button { session.closeSourceFolder() } label: {
                     Image(systemName: "folder")
                 }
                 .help("Open Folder")

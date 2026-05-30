@@ -121,12 +121,11 @@ struct ExportSheet: View {
         let sourceFolder = session.sourceFolder
 
         Task {
-            // Access security-scoped resources
+            // Access security-scoped resource for destination
+            // (source folder access is held by CullSession for its lifetime)
             let destAccess = destination.startAccessingSecurityScopedResource()
-            let srcAccess = sourceFolder?.startAccessingSecurityScopedResource() ?? false
             defer {
                 if destAccess { destination.stopAccessingSecurityScopedResource() }
-                if srcAccess { sourceFolder?.stopAccessingSecurityScopedResource() }
             }
 
             let exportResult = await PhotoExporter.export(
