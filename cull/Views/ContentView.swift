@@ -7,6 +7,11 @@ struct ContentView: View {
     @State private var showExportSheet = false
     @FocusState private var isViewerFocused: Bool
 
+    /// Whether the culling UI is active (toolbar items should be visible)
+    private var isCulling: Bool {
+        session.sourceFolder != nil && !session.isImporting && !session.groups.isEmpty
+    }
+
     var body: some View {
         Group {
             if session.sourceFolder == nil {
@@ -30,6 +35,89 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 1000, minHeight: 600)
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                HStack(spacing: 4) {
+                    ToolbarFilterButton(
+                        activeIcon: "checkmark.circle.fill",
+                        inactiveIcon: "checkmark.circle",
+                        isActive: session.selectedPhoto?.flag == .pick,
+                        isFiltered: session.hidePicks,
+                        activeColor: .green,
+                        action: { session.togglePick() },
+                        filterAction: { session.togglePickFilter() },
+                        help: "Pick (P) · ⌘Click to filter"
+                    )
+
+                    ToolbarFilterButton(
+                        activeIcon: "xmark.circle.fill",
+                        inactiveIcon: "xmark.circle",
+                        isActive: session.selectedPhoto?.flag == .reject,
+                        isFiltered: session.hideRejects,
+                        activeColor: .red,
+                        action: { session.toggleReject() },
+                        filterAction: { session.toggleRejectFilter() },
+                        help: "Reject (X) · ⌘Click to filter"
+                    )
+                }
+                .opacity(isCulling ? 1 : 0)
+                .disabled(!isCulling)
+            }
+
+            ToolbarItem(placement: .automatic) {
+                HStack(spacing: 2) {
+                    ToolbarFilterButton(
+                        activeIcon: "circle.slash",
+                        inactiveIcon: "circle.slash",
+                        isActive: session.selectedPhoto?.rating == 0,
+                        isFiltered: session.hideUnrated,
+                        activeColor: .secondary,
+                        action: { session.clearRatingAndFlag() },
+                        filterAction: { session.toggleUnratedFilter() },
+                        help: "Unrated (0) · ⌘Click to filter"
+                    )
+
+                    ForEach(1...5, id: \.self) { star in
+                        let isActive = star <= (session.selectedPhoto?.rating ?? 0)
+                        let isFiltered = session.hiddenRatings.contains(star)
+                        ToolbarFilterButton(
+                            activeIcon: "star.fill",
+                            inactiveIcon: "star",
+                            isActive: isActive,
+                            isFiltered: isFiltered,
+                            activeColor: .yellow,
+                            action: { session.setRating(star) },
+                            filterAction: { session.toggleRatingFilter(star) },
+                            help: "Rate \(star) · ⌘Click to filter"
+                        )
+                    }
+                }
+                .opacity(isCulling ? 1 : 0)
+                .disabled(!isCulling)
+            }
+
+            ToolbarItem(placement: .automatic) {
+                Spacer()
+            }
+
+            ToolbarItem(placement: .automatic) {
+                Button { showExportSheet = true } label: {
+                    Image(systemName: "square.and.arrow.up.on.square")
+                }
+                .help("Export (E)")
+                .opacity(isCulling ? 1 : 0)
+                .disabled(!isCulling)
+            }
+
+            ToolbarItem(placement: .automatic) {
+                Button { session.closeSourceFolder() } label: {
+                    Image(systemName: "folder")
+                }
+                .help("Open Folder")
+                .opacity(isCulling ? 1 : 0)
+                .disabled(!isCulling)
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { notification in
             guard let url = notification.object as? URL else { return }
             startImport(url)
@@ -400,81 +488,6 @@ struct ContentView: View {
         .onChange(of: session.selectedPhotoIndex) { isViewerFocused = true }
         .sheet(isPresented: $showExportSheet) {
             ExportSheet()
-        }
-        .toolbar {
-            ToolbarItem(placement: .automatic) {
-                HStack(spacing: 4) {
-                    ToolbarFilterButton(
-                        activeIcon: "checkmark.circle.fill",
-                        inactiveIcon: "checkmark.circle",
-                        isActive: session.selectedPhoto?.flag == .pick,
-                        isFiltered: session.hidePicks,
-                        activeColor: .green,
-                        action: { session.togglePick() },
-                        filterAction: { session.togglePickFilter() },
-                        help: "Pick (P) · ⌘Click to filter"
-                    )
-
-                    ToolbarFilterButton(
-                        activeIcon: "xmark.circle.fill",
-                        inactiveIcon: "xmark.circle",
-                        isActive: session.selectedPhoto?.flag == .reject,
-                        isFiltered: session.hideRejects,
-                        activeColor: .red,
-                        action: { session.toggleReject() },
-                        filterAction: { session.toggleRejectFilter() },
-                        help: "Reject (X) · ⌘Click to filter"
-                    )
-                }
-            }
-
-            ToolbarItem(placement: .automatic) {
-                HStack(spacing: 2) {
-                    ToolbarFilterButton(
-                        activeIcon: "circle.slash",
-                        inactiveIcon: "circle.slash",
-                        isActive: session.selectedPhoto?.rating == 0,
-                        isFiltered: session.hideUnrated,
-                        activeColor: .secondary,
-                        action: { session.clearRatingAndFlag() },
-                        filterAction: { session.toggleUnratedFilter() },
-                        help: "Unrated (0) · ⌘Click to filter"
-                    )
-
-                    ForEach(1...5, id: \.self) { star in
-                        let isActive = star <= (session.selectedPhoto?.rating ?? 0)
-                        let isFiltered = session.hiddenRatings.contains(star)
-                        ToolbarFilterButton(
-                            activeIcon: "star.fill",
-                            inactiveIcon: "star",
-                            isActive: isActive,
-                            isFiltered: isFiltered,
-                            activeColor: .yellow,
-                            action: { session.setRating(star) },
-                            filterAction: { session.toggleRatingFilter(star) },
-                            help: "Rate \(star) · ⌘Click to filter"
-                        )
-                    }
-                }
-            }
-
-            ToolbarItem(placement: .automatic) {
-                Spacer()
-            }
-
-            ToolbarItem(placement: .automatic) {
-                Button { showExportSheet = true } label: {
-                    Image(systemName: "square.and.arrow.up.on.square")
-                }
-                .help("Export (E)")
-            }
-
-            ToolbarItem(placement: .automatic) {
-                Button { session.closeSourceFolder() } label: {
-                    Image(systemName: "folder")
-                }
-                .help("Open Folder")
-            }
         }
     }
 }

@@ -36,7 +36,7 @@ struct CullApp: App {
                     session.importRecursive = importRecursive
                 }
         }
-        .windowStyle(.automatic)
+        .defaultSize(width: 1000, height: 600)
         .commands {
             // Replace default File menu items
             CommandGroup(replacing: .newItem) {
