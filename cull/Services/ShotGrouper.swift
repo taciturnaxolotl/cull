@@ -13,6 +13,31 @@ struct ShotGrouper {
     /// Higher = more lenient grouping (different framings of same scene)
     static let similarityThreshold: Float = 0.6
 
+    /// For RAW files with embedded previews, find the largest image index.
+    /// Returns (source, imageIndex). Shared with QualityAnalyzer.
+    static func bestImageSource(for url: URL) -> (CGImageSource, Int)? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+
+        let count = CGImageSourceGetCount(source)
+        if count > 1 {
+            var bestIndex = 0
+            var bestPixels = 0
+            for i in 0..<count {
+                if let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any],
+                   let w = props[kCGImagePropertyPixelWidth as String] as? Int,
+                   let h = props[kCGImagePropertyPixelHeight as String] as? Int {
+                    let pixels = w * h
+                    if pixels > bestPixels {
+                        bestPixels = pixels
+                        bestIndex = i
+                    }
+                }
+            }
+            return (source, bestIndex)
+        }
+        return (source, 0)
+    }
+
     /// Full grouping: temporal + visual similarity + merge close shots
     static func group(photos: [Photo], progress: (@Sendable (Double) async -> Void)? = nil) async -> [PhotoGroup] {
         guard !photos.isEmpty else { return [] }
@@ -110,7 +135,11 @@ struct ShotGrouper {
                 guard !assigned.contains(otherPhoto.id) else { continue }
 
                 var distance: Float = 0
-                try? fp.computeDistance(&distance, to: otherFP)
+                do {
+                    try fp.computeDistance(&distance, to: otherFP)
+                } catch {
+                    continue // Incompatible feature prints — treat as not similar
+                }
 
                 if distance < similarityThreshold {
                     cluster.append(otherPhoto)
@@ -175,12 +204,16 @@ struct ShotGrouper {
         else { return false }
 
         var distance: Float = 0
-        try? aFP.computeDistance(&distance, to: bFP)
+        do {
+            try aFP.computeDistance(&distance, to: bFP)
+        } catch {
+            return false // Incompatible feature prints — treat as not similar
+        }
         return distance < similarityThreshold
     }
 
     private static func generateFeaturePrint(url: URL) async -> VNFeaturePrintObservation? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        guard let (source, imageIndex) = bestImageSource(for: url) else { return nil }
 
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
@@ -188,7 +221,7 @@ struct ShotGrouper {
             kCGImageSourceShouldCache: false,
             kCGImageSourceCreateThumbnailWithTransform: true
         ]
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, imageIndex, options as CFDictionary) else { return nil }
 
         let request = VNGenerateImageFeaturePrintRequest()
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])

@@ -6,30 +6,9 @@ import Vision
 struct QualityAnalyzer {
 
     /// For RAW files, find the best image index to analyze.
-    /// RAW files embed JPEG previews (with camera sharpening) as secondary images.
-    /// Returns (source, imageIndex) so the thumbnail API can extract from the right image.
+    /// Delegates to ShotGrouper.bestImageSource which finds the largest embedded preview.
     private static func sourceForAnalysis(_ url: URL) -> (CGImageSource, Int)? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-
-        let count = CGImageSourceGetCount(source)
-        if count > 1 {
-            // Find the largest embedded preview (usually a camera-processed JPEG)
-            var bestIndex = 0
-            var bestPixels = 0
-            for i in 0..<count {
-                if let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any],
-                   let w = props[kCGImagePropertyPixelWidth as String] as? Int,
-                   let h = props[kCGImagePropertyPixelHeight as String] as? Int {
-                    let pixels = w * h
-                    if pixels > bestPixels {
-                        bestPixels = pixels
-                        bestIndex = i
-                    }
-                }
-            }
-            return (source, bestIndex)
-        }
-        return (source, 0)
+        ShotGrouper.bestImageSource(for: url)
     }
 
     /// Laplacian variance sharpness detection using Accelerate (vDSP).
