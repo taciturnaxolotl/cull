@@ -283,6 +283,25 @@ final class ThumbnailCache {
         }
     }
 
+    /// Remove thumbnails and previews for photos that are no longer visible
+    func evictFiltered(keeping photos: [Photo]) {
+        let keepKeys = Set(photos.map { $0.url.absoluteString })
+
+        // Evict previews
+        for key in previewKeys where !keepKeys.contains(key) {
+            previewCache.removeObject(forKey: key as NSString)
+            previewKeys.remove(key)
+        }
+
+        // Evict thumbnails
+        for key in thumbnailKeys where !keepKeys.contains(key) {
+            memoryCache.removeObject(forKey: key as NSString)
+            thumbnailKeys.remove(key)
+        }
+
+        cacheGeneration += 1
+    }
+
     // MARK: - Stats
 
     struct CacheStats {

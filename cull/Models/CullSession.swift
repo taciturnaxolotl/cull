@@ -44,6 +44,8 @@ final class CullSession {
     var hideUnrated: Bool = false
     var hidePicks: Bool = false
     var hideRejects: Bool = false
+    /// Bumps on every filter change so views can react
+    private(set) var filterVersion: Int = 0
 
     func toggleRatingFilter(_ rating: Int) {
         if hiddenRatings.contains(rating) {
@@ -51,24 +53,28 @@ final class CullSession {
         } else {
             hiddenRatings.insert(rating)
         }
+        filterVersion += 1
         ensureVisibleSelection()
         scheduleSave()
     }
 
     func togglePickFilter() {
         hidePicks.toggle()
+        filterVersion += 1
         ensureVisibleSelection()
         scheduleSave()
     }
 
     func toggleRejectFilter() {
         hideRejects.toggle()
+        filterVersion += 1
         ensureVisibleSelection()
         scheduleSave()
     }
 
     func toggleUnratedFilter() {
         hideUnrated.toggle()
+        filterVersion += 1
         ensureVisibleSelection()
         scheduleSave()
     }

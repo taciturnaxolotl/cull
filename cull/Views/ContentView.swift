@@ -132,6 +132,12 @@ struct ContentView: View {
         .onAppear {
             session.undoManager = windowUndoManager
         }
+        .onChange(of: session.filterVersion) {
+            // Evict cache entries for filtered photos, preload newly visible ones
+            let visible = session.allPhotos.filter { !session.isPhotoFiltered($0) }
+            cache.evictFiltered(keeping: visible)
+            cache.preload(photos: visible)
+        }
     }
 
     @MainActor
@@ -149,6 +155,7 @@ struct ContentView: View {
                 // Try loading from workspace first
                 if let wsResult = s.openWorkspace(folder: url) {
                     let allPhotos = s.allPhotos
+                    let visiblePhotos = allPhotos.filter { !s.isPhotoFiltered($0) }
                     let newPhotos = wsResult.newPhotos
 
                     if !newPhotos.isEmpty {
@@ -188,9 +195,9 @@ struct ContentView: View {
                         }
                     }
 
-                    // Load thumbnails and previews
+                    // Load thumbnails and previews (only visible/unfiltered photos)
                     await MainActor.run { s.importStatus = "Loading thumbnails..." }
-                    await c.preloadAllThumbnails(photos: allPhotos) { p in
+                    await c.preloadAllThumbnails(photos: visiblePhotos) { p in
                         await MainActor.run {
                             withAnimation(.linear(duration: 0.2)) {
                                 s.importProgress = p * 0.7
@@ -199,8 +206,8 @@ struct ContentView: View {
                     }
 
                     await MainActor.run { s.importStatus = "Loading previews..." }
-                    let ahead = Array(allPhotos.prefix(30))
-                    let behind = Array(allPhotos.suffix(30))
+                    let ahead = Array(visiblePhotos.prefix(30))
+                    let behind = Array(visiblePhotos.suffix(30))
                     let initialPreviews = ahead + behind.reversed()
                     await c.preloadAllPreviews(photos: initialPreviews) { p in
                         await MainActor.run {
@@ -372,6 +379,7 @@ struct ContentView: View {
 
                 // Phase 3: Analysis + Thumbnails + Previews in parallel (20-100%)
                 let allPhotos = groups.flatMap(\.photos)
+                let visiblePhotos = allPhotos.filter { !s.isPhotoFiltered($0) }
                 await MainActor.run { s.importStatus = "Analyzing & loading..." }
 
                 let totalPhotos = Double(allPhotos.count)
@@ -407,15 +415,15 @@ struct ContentView: View {
                     }
 
                     parallelGroup.addTask {
-                        await c.preloadAllThumbnails(photos: allPhotos) { p in
+                        await c.preloadAllThumbnails(photos: visiblePhotos) { p in
                             thumbProgress = p
                             await reportProgress()
                         }
                     }
 
                     parallelGroup.addTask {
-                        let ahead = Array(allPhotos.prefix(30))
-                        let behind = Array(allPhotos.suffix(30))
+                        let ahead = Array(visiblePhotos.prefix(30))
+                        let behind = Array(visiblePhotos.suffix(30))
                         let initialPreviews = ahead + behind.reversed()
                         await c.preloadAllPreviews(photos: initialPreviews) { p in
                             previewProgress = p
