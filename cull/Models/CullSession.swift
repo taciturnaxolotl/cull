@@ -259,6 +259,27 @@ final class CullSession {
         }
     }
 
+    /// Returns the first visible photo from the next and previous `groupCount` groups.
+    /// Interleaved closest-first so nearest groups are cached with highest priority.
+    func adjacentGroupRepresentatives(groupCount: Int = 15) -> [Photo] {
+        guard !groups.isEmpty else { return [] }
+        var result: [Photo] = []
+        for offset in 1...groupCount {
+            // Next group (closest first due to iteration order)
+            let nextIdx = (selectedGroupIndex + offset) % groups.count
+            if let first = groups[nextIdx].photos.first(where: { !isPhotoFiltered($0) }) {
+                result.append(first)
+            }
+            // Previous group
+            let prevIdx = (selectedGroupIndex - offset + groups.count) % groups.count
+            if prevIdx != nextIdx,
+               let first = groups[prevIdx].photos.first(where: { !isPhotoFiltered($0) }) {
+                result.append(first)
+            }
+        }
+        return result
+    }
+
     // MARK: - Culling Actions
 
     private func applyPhotoState(_ photo: Photo, rating: Int, flag: PhotoFlag, actionName: String) {

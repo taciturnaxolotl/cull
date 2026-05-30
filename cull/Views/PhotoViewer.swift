@@ -290,15 +290,25 @@ struct PhotoViewer: View {
                 }
             }
 
-            // Preload window fanning out from current position (closest first)
+            // Preload window: current → interleaved group reps + linear neighbors (closest first)
             guard !Task.isCancelled, displayedPhotoID == photoID else { return }
+            let groupReps = session.adjacentGroupRepresentatives(groupCount: 15)
             let ahead = session.photosAhead(lookaheadCount)
             let behind = session.photosBehind(lookbehindCount)
+
+            // Interleave: 2 group reps per linear neighbor so group scanning gets priority
             var fanOut: [Photo] = []
-            let maxLen = max(ahead.count, behind.count)
-            for i in 0..<maxLen {
-                if i < ahead.count { fanOut.append(ahead[i]) }
-                if i < behind.count { fanOut.append(behind[i]) }
+            let maxLinear = max(ahead.count, behind.count)
+            let maxGroups = groupReps.count
+            var gi = 0, li = 0
+            while gi < maxGroups || li < maxLinear {
+                // Two group reps
+                if gi < maxGroups { fanOut.append(groupReps[gi]); gi += 1 }
+                if gi < maxGroups { fanOut.append(groupReps[gi]); gi += 1 }
+                // One linear neighbor each direction
+                if li < ahead.count { fanOut.append(ahead[li]) }
+                if li < behind.count { fanOut.append(behind[li]) }
+                li += 1
             }
             let window = [photo] + fanOut
             cache.preloadPreviews(photos: window)
@@ -314,10 +324,22 @@ struct PhotoViewer: View {
                     displayImage = thumb
                     displayQuality = "thumbnail"
                 }
-                // Preload initial window
+                // Preload initial window: group reps prioritized over linear neighbors
+                let groupReps = session.adjacentGroupRepresentatives(groupCount: 15)
                 let ahead = session.photosAhead(lookaheadCount)
                 let behind = session.photosBehind(lookbehindCount)
-                cache.preloadPreviews(photos: behind + [photo] + ahead)
+                var fanOut: [Photo] = []
+                let maxLinear = max(ahead.count, behind.count)
+                let maxGroups = groupReps.count
+                var gi = 0, li = 0
+                while gi < maxGroups || li < maxLinear {
+                    if gi < maxGroups { fanOut.append(groupReps[gi]); gi += 1 }
+                    if gi < maxGroups { fanOut.append(groupReps[gi]); gi += 1 }
+                    if li < ahead.count { fanOut.append(ahead[li]) }
+                    if li < behind.count { fanOut.append(behind[li]) }
+                    li += 1
+                }
+                cache.preloadPreviews(photos: [photo] + fanOut)
             }
         }
     }
