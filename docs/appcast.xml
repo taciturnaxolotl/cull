@@ -5,5 +5,39 @@
     <link>https://taciturnaxolotl.github.io/cull/appcast.xml</link>
     <description>Most recent updates to Cull</description>
     <language>en</language>
+    <item>
+      <title>Version 0.2.0</title>
+      <pubDate>Sun, 31 May 2026 01:38:54 +0000</pubDate>
+      <sparkle:version>0.2.0</sparkle:version>
+      <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<p>Here's what changed since 0.1.1:</p>
+<p><b>Bug Fixes</b></p>
+<ul>
+  <li>Fixed data races on <code>@Observable</code> types from non-MainActor contexts in PhotoImporter, ShotGrouper, and ThumbnailCache</li>
+  <li>Fixed false-positive photo grouping when <code>computeDistance</code> throws (was silently grouping unrelated photos at distance 0)</li>
+  <li>Fixed ShotGrouper using wrong image index for RAW files during feature print generation</li>
+  <li>Fixed window corner radius changing between import screen and culling view (macOS 26 Tahoe toolbar detection)</li>
+  <li>Fixed cache loading thumbnails/previews for filtered-out photos on workspace reopen and reanalyze</li>
+  <li>Fixed security-scoped resource access not started on folder open (risked silent write failures)</li>
+</ul>
+<p><b>Features</b></p>
+<ul>
+  <li>Preview preloading now prioritizes adjacent group representatives (15 each direction) for smoother left/right scanning</li>
+  <li>Cache evicts and reloads when display filters are toggled</li>
+  <li>Debug cache overlay now shows live preload/eviction log with counts</li>
+</ul>
+<p><b>Chores</b></p>
+<ul>
+  <li>Extracted shared <code>bestImageSource()</code> helper between ShotGrouper and QualityAnalyzer</li>
+</ul>
+<p><b>Full Changelog</b>: https://github.com/taciturnaxolotl/cull/compare/0.1.1...0.2.0</p>]]></description>
+      <enclosure
+        url="https://github.com/taciturnaxolotl/cull/releases/download/0.2.0/Cull-0.2.0-macOS.dmg"
+        sparkle:edSignature="K+YsfEBSivFIG8pX3krD0v6axroFCdFqT2Y/IYrD+OVVZqFBHEmtyp84D9lg6O0JYGWYusCthDK8mnO/PlYKAQ=="
+        length="4036006"
+        type="application/octet-stream"
+        sparkle:os="macos"/>
+    </item>
   </channel>
 </rss>
