@@ -161,7 +161,7 @@ final class CullSession {
             for i in stride(from: newGroup.photos.count - 1, through: 0, by: -1) {
                 if !isPhotoFiltered(newGroup.photos[i]) {
                     selectedPhotoIndex = i
-                    return
+                        return
                 }
             }
         }
@@ -242,9 +242,9 @@ final class CullSession {
         let visible = allPhotos.filter { !isPhotoFiltered($0) }
         guard !visible.isEmpty, count > 0 else { return [] }
         guard let current = selectedPhoto,
-              let visibleIndex = visible.firstIndex(where: { $0.id == current.id }) else { return [] }
+              let vi = visible.firstIndex(where: { $0.id == current.id }) else { return [] }
         return (1...min(count, visible.count - 1)).map { i in
-            visible[(visibleIndex + i) % visible.count]
+            visible[(vi + i) % visible.count]
         }
     }
 
@@ -253,9 +253,9 @@ final class CullSession {
         let visible = allPhotos.filter { !isPhotoFiltered($0) }
         guard !visible.isEmpty, count > 0 else { return [] }
         guard let current = selectedPhoto,
-              let visibleIndex = visible.firstIndex(where: { $0.id == current.id }) else { return [] }
+              let vi = visible.firstIndex(where: { $0.id == current.id }) else { return [] }
         return (1...min(count, visible.count - 1)).map { i in
-            visible[(visibleIndex - i + visible.count) % visible.count]
+            visible[(vi - i + visible.count) % visible.count]
         }
     }
 
@@ -265,12 +265,10 @@ final class CullSession {
         guard !groups.isEmpty else { return [] }
         var result: [Photo] = []
         for offset in 1...groupCount {
-            // Next group (closest first due to iteration order)
             let nextIdx = (selectedGroupIndex + offset) % groups.count
             if let first = groups[nextIdx].photos.first(where: { !isPhotoFiltered($0) }) {
                 result.append(first)
             }
-            // Previous group
             let prevIdx = (selectedGroupIndex - offset + groups.count) % groups.count
             if prevIdx != nextIdx,
                let first = groups[prevIdx].photos.first(where: { !isPhotoFiltered($0) }) {
@@ -478,6 +476,7 @@ final class CullSession {
         if let group = selectedGroup {
             selectedPhotoIndex = min(selectedPhotoIndex, group.photos.count - 1)
         }
+
 
         return WorkspaceResult(newPhotos: newPhotos)
     }

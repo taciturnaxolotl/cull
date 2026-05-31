@@ -82,6 +82,17 @@ struct PhotoViewer: View {
                             .fontWeight(.semibold)
                         Text("Groups: \(session.groups.count)")
                         Text("Photos: \(allPhotos.count)")
+
+                        Divider().overlay(Color.white.opacity(0.3))
+
+                        Text("Log")
+                            .fontWeight(.semibold)
+                        ForEach(Array(cache.debugLog.prefix(8).enumerated()), id: \.offset) { _, entry in
+                            Text(entry)
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.7))
+                                .lineLimit(1)
+                        }
                     }
                     .font(.caption2)
                     .foregroundStyle(.white)
@@ -277,8 +288,8 @@ struct PhotoViewer: View {
                 displayQuality = "preview"
             }
 
-            // Wait for user to stop navigating before doing any loading
-            try? await Task.sleep(for: .milliseconds(100))
+            // Wait for user to pause before computing preload window
+            try? await Task.sleep(for: .milliseconds(150))
             guard !Task.isCancelled, displayedPhotoID == photoID else { return }
 
             // Load current photo's full-res preview
@@ -290,22 +301,19 @@ struct PhotoViewer: View {
                 }
             }
 
-            // Preload window: current → interleaved group reps + linear neighbors (closest first)
+            // Preload window: group reps prioritized over linear neighbors
             guard !Task.isCancelled, displayedPhotoID == photoID else { return }
             let groupReps = session.adjacentGroupRepresentatives(groupCount: 15)
             let ahead = session.photosAhead(lookaheadCount)
             let behind = session.photosBehind(lookbehindCount)
 
-            // Interleave: 2 group reps per linear neighbor so group scanning gets priority
             var fanOut: [Photo] = []
             let maxLinear = max(ahead.count, behind.count)
             let maxGroups = groupReps.count
             var gi = 0, li = 0
             while gi < maxGroups || li < maxLinear {
-                // Two group reps
                 if gi < maxGroups { fanOut.append(groupReps[gi]); gi += 1 }
                 if gi < maxGroups { fanOut.append(groupReps[gi]); gi += 1 }
-                // One linear neighbor each direction
                 if li < ahead.count { fanOut.append(ahead[li]) }
                 if li < behind.count { fanOut.append(behind[li]) }
                 li += 1

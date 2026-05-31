@@ -11,6 +11,8 @@ final class ThumbnailCache {
     private var preloadTask: Task<Void, Never>?
     /// Bumped whenever cache state changes, to trigger SwiftUI re-renders for debug overlay
     private(set) var cacheGeneration = 0
+    /// Recent debug log entries (newest first), shown in debug overlay
+    private(set) var debugLog: [String] = []
     private let diskCacheURL: URL
     private let maxPixelSize: Int
 
@@ -25,6 +27,13 @@ final class ThumbnailCache {
         previewCache.countLimit = 120
 
         try? FileManager.default.createDirectory(at: diskCacheURL, withIntermediateDirectories: true)
+    }
+
+    private func log(_ message: String) {
+        let entry = "\(message) [\(previewKeys.count)/\(previewCache.countLimit)]"
+        debugLog.insert(entry, at: 0)
+        if debugLog.count > 20 { debugLog = Array(debugLog.prefix(20)) }
+        cacheGeneration += 1
     }
 
     // MARK: - Synchronous lookups (instant, memory only)
@@ -240,6 +249,8 @@ final class ThumbnailCache {
         }
         guard !work.isEmpty else { return }
 
+        log("preload \(work.count)/\(photos.count) new previews")
+
         let pc = previewCache
 
         preloadTask = Task.detached(priority: .utility) {
@@ -277,9 +288,14 @@ final class ThumbnailCache {
     /// Remove previews that are outside the current window
     func evictPreviews(keeping photos: [Photo]) {
         let keepKeys = Set(photos.map { $0.url.absoluteString })
+        var evicted = 0
         for key in previewKeys where !keepKeys.contains(key) {
             previewCache.removeObject(forKey: key as NSString)
             previewKeys.remove(key)
+            evicted += 1
+        }
+        if evicted > 0 {
+            log("evict \(evicted) previews")
         }
     }
 
@@ -288,17 +304,24 @@ final class ThumbnailCache {
         let keepKeys = Set(photos.map { $0.url.absoluteString })
 
         // Evict previews
+        var evictedPreviews = 0
         for key in previewKeys where !keepKeys.contains(key) {
             previewCache.removeObject(forKey: key as NSString)
             previewKeys.remove(key)
+            evictedPreviews += 1
         }
 
         // Evict thumbnails
+        var evictedThumbs = 0
         for key in thumbnailKeys where !keepKeys.contains(key) {
             memoryCache.removeObject(forKey: key as NSString)
             thumbnailKeys.remove(key)
+            evictedThumbs += 1
         }
 
+        if evictedPreviews > 0 || evictedThumbs > 0 {
+            log("filter evict \(evictedPreviews)p \(evictedThumbs)t")
+        }
         cacheGeneration += 1
     }
 
