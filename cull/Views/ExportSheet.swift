@@ -42,6 +42,13 @@ struct ExportSheet: View {
             : ExportFolderStructure.allCases.filter { !$0.splitsByFileType }
     }
 
+    /// Every file would land exactly where it already is, so the export would do nothing
+    private var exportsOntoItself: Bool {
+        guard let destination, let source = session.sourceFolder else { return false }
+        return destination.standardizedFileURL == source.standardizedFileURL
+            && folderStructure == .flat
+    }
+
     var body: some View {
         VStack(spacing: 20) {
             Text("Export Photos")
@@ -72,13 +79,20 @@ struct ExportSheet: View {
                 }
 
                 HStack {
-                    if let destination {
-                        Text(destination.lastPathComponent)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    } else {
-                        Text("No destination selected")
-                            .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        if let destination {
+                            Text(destination.lastPathComponent)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        } else {
+                            Text("No destination selected")
+                                .foregroundStyle(.secondary)
+                        }
+                        if exportsOntoItself {
+                            Text("Pick an empty folder")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
                     }
                     Spacer()
                     Button("Choose...") { chooseDestination() }
@@ -114,7 +128,7 @@ struct ExportSheet: View {
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
 
-                let canExport = destination != nil && !isExporting && !eligiblePhotos.isEmpty
+                let canExport = destination != nil && !isExporting && !eligiblePhotos.isEmpty && !exportsOntoItself
                 Button("Export") { runExport() }
                     .buttonStyle(.borderedProminent)
                     .disabled(!canExport)
@@ -139,6 +153,10 @@ struct ExportSheet: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.message = "Choose export destination"
+        // Open where the photos are rather than wherever the panel was last left. The
+        // destination itself stays unset until something is chosen, so the sheet doesn't
+        // open already complaining about a folder the user never picked.
+        panel.directoryURL = destination ?? session.sourceFolder
 
         if panel.runModal() == .OK {
             destination = panel.url
