@@ -278,24 +278,47 @@ struct PhotoViewer: View {
         .task(id: session.selectedPhoto?.id) {
             guard let photo = session.selectedPhoto else { return }
             let photoID = photo.id
+            // Claim the photo here rather than trusting onAppear to have run first.
+            // SwiftUI can start this task before onAppear, and every staleness guard
+            // below compares against this — when it was still nil the task bailed out
+            // and the preview never loaded, leaving the first photo stuck on its
+            // thumbnail until you navigated away and back.
+            displayedPhotoID = photoID
 
-            // If full-res is already cached, show it immediately
+            // Track what this task has put on screen locally. The @State flags describe
+            // whichever photo ran last, and this task can start before onChange updates
+            // them, so reading them back here would make the wrong decision.
+            var showing = "none"
+
             if let cached = cache.cachedPreview(for: photo) {
                 displayImage = cached
                 displayQuality = "preview"
+                showing = "preview"
+            }
+
+            // Nothing cached — pull the thumbnail so the viewer shows something while
+            // the preview decodes. Photos a filter hides are never preloaded, so landing
+            // on one used to mean staring at a blank frame.
+            if showing == "none", let thumb = await cache.thumbnail(for: photo) {
+                guard displayedPhotoID == photoID else { return }
+                displayImage = thumb
+                displayQuality = "thumbnail"
+                showing = "thumbnail"
             }
 
             // Wait for user to pause before computing preload window
             try? await Task.sleep(for: .milliseconds(150))
             guard !Task.isCancelled, displayedPhotoID == photoID else { return }
 
-            // Load current photo's full-res preview
-            if cache.cachedPreview(for: photo) == nil {
-                if let full = await cache.previewImage(for: photo) {
-                    guard displayedPhotoID == photoID else { return }
-                    displayImage = full
-                    displayQuality = "preview"
-                }
+            // Show the full-res preview. Gate on what's on screen, not on what's in the
+            // cache: the background loader often caches this photo's preview while we're
+            // sleeping, and the old "load it only if uncached" check then skipped the
+            // upgrade and left the thumbnail up. previewImage returns the cached copy
+            // instantly when there is one.
+            if showing != "preview", let full = await cache.previewImage(for: photo) {
+                guard displayedPhotoID == photoID else { return }
+                displayImage = full
+                displayQuality = "preview"
             }
 
             // Preload window: group reps prioritized over linear neighbors

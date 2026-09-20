@@ -508,12 +508,31 @@ final class CullSession {
         self.groups = rebuiltGroups
         db.loadSettings(into: self)
 
-        // Clamp navigation indices
-        selectedGroupIndex = min(selectedGroupIndex, groups.count - 1)
-        if let group = selectedGroup {
-            selectedPhotoIndex = min(selectedPhotoIndex, group.photos.count - 1)
+        // Prefer the remembered photo over the remembered indices: regrouping or a
+        // change in sort order leaves the old indices pointing at a different photo.
+        var restored = false
+        if let savedPath = db.loadSetting("selectedPhotoPath") {
+            let savedURL = folder.appendingPathComponent(savedPath)
+            for (gi, group) in groups.enumerated() {
+                if let pi = group.photos.firstIndex(where: { $0.url == savedURL }) {
+                    selectedGroupIndex = gi
+                    selectedPhotoIndex = pi
+                    restored = true
+                    break
+                }
+            }
         }
 
+        if !restored {
+            selectedGroupIndex = min(selectedGroupIndex, groups.count - 1)
+            if let group = selectedGroup {
+                selectedPhotoIndex = min(selectedPhotoIndex, group.photos.count - 1)
+            }
+        }
+
+        // Restored filters may hide whatever the cursor landed on. Nothing preloads
+        // hidden photos, so leaving the cursor there opens the viewer on a blank frame.
+        ensureVisibleSelection()
 
         return WorkspaceResult(newPhotos: newPhotos)
     }

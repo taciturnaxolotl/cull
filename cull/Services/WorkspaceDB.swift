@@ -141,6 +141,11 @@ final class WorkspaceDB: @unchecked Sendable {
     func saveSettings(session: CullSession) {
         saveSetting("selectedGroupIndex", "\(session.selectedGroupIndex)")
         saveSetting("selectedPhotoIndex", "\(session.selectedPhotoIndex)")
+        // Indices go stale whenever grouping or ordering changes, so remember the
+        // photo itself and treat the indices as a fallback.
+        if let folder = session.sourceFolder, let photo = session.selectedPhoto {
+            saveSetting("selectedPhotoPath", photo.url.relativePath(from: folder))
+        }
         saveSetting("hidePicks", session.hidePicks ? "1" : "0")
         saveSetting("hideRejects", session.hideRejects ? "1" : "0")
         saveSetting("hideUnrated", session.hideUnrated ? "1" : "0")
