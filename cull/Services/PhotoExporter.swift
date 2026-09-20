@@ -67,12 +67,23 @@ struct PhotoExporter {
             }
 
             var photoExported = false
+            var photoSkipped = false
             for sourceURL in urls {
                 let accessing = sourceURL.startAccessingSecurityScopedResource()
                 defer { if accessing { sourceURL.stopAccessingSecurityScopedResource() } }
 
                 let subfolder = subfolder(for: sourceURL, photo: photo, structure: folderStructure)
                 let destDir = subfolder.isEmpty ? destination : destination.appendingPathComponent(subfolder)
+
+                let destURL = destDir.appendingPathComponent(sourceURL.lastPathComponent)
+
+                // Exporting a folder into itself lands the file on top of itself. The
+                // overwrite below would delete the original and then have nothing left
+                // to copy, so leave it where it is.
+                guard destURL.standardizedFileURL != sourceURL.standardizedFileURL else {
+                    photoSkipped = true
+                    continue
+                }
 
                 do {
                     try fm.createDirectory(at: destDir, withIntermediateDirectories: true)
@@ -81,7 +92,6 @@ struct PhotoExporter {
                     continue
                 }
 
-                let destURL = destDir.appendingPathComponent(sourceURL.lastPathComponent)
                 do {
                     if fm.fileExists(atPath: destURL.path) {
                         try fm.removeItem(at: destURL)
@@ -96,6 +106,9 @@ struct PhotoExporter {
                 } catch {
                     errors.append("\(sourceURL.lastPathComponent): \(error.localizedDescription)")
                 }
+            }
+            if !photoExported && photoSkipped {
+                skipped += 1
             }
             if photoExported {
                 exported += 1
