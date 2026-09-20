@@ -2,12 +2,13 @@ import Vision
 import ImageIO
 
 struct ShotGrouper {
-    /// Time gap threshold for temporal clustering (seconds)
-    static let timeGapThreshold: TimeInterval = 30
+    /// Largest gap between frames that still counts as one burst (seconds).
+    /// Bursts are the unit of grouping and are never split: anything shot this close
+    /// together is one moment, including the pauses while reframing a shot.
+    static let burstGapThreshold: TimeInterval = 3
 
-    /// Threshold for merging adjacent temporal clusters (seconds)
-    /// Groups within this time window get merged if visually similar
-    static let mergeTimeThreshold: TimeInterval = 5
+    /// How close two neighbouring bursts must be to be considered for merging (seconds)
+    static let mergeTimeThreshold: TimeInterval = 10
 
     /// Feature print distance threshold for visual similarity (Revision 2, macOS 14+)
     /// Higher = more lenient grouping (different framings of same scene)
@@ -38,18 +39,26 @@ struct ShotGrouper {
         return (source, 0)
     }
 
-    /// Full grouping: temporal + visual similarity + merge close shots
+    /// Groups a shoot into scenes, in the order they were taken.
+    ///
+    /// Two passes, and the order matters. First the timeline is cut into bursts — frames
+    /// shot close enough together to be one moment — which are never broken up. Then
+    /// neighbouring bursts are merged when they're close in time and look alike.
+    ///
+    /// Only *neighbouring* units ever merge, which is what keeps the browse order
+    /// chronological. Gathering every similar shot within a window instead, as this used
+    /// to, means two subjects photographed in alternation become two groups covering the
+    /// same minutes, and walking from one to the next runs the clock backwards.
     static func group(photos: [Photo], progress: (@Sendable (Double) async -> Void)? = nil) async -> [PhotoGroup] {
         guard !photos.isEmpty else { return [] }
 
-        // Step 1: Temporal clustering
-        let timeClusters = clusterByTime(photos)
-        let totalWork = Double(photos.count)
-        var completed = 0.0
+        let bursts = splitIntoBursts(photos)
 
-        // Step 2: Generate feature prints for all photos (batched to report smooth progress)
+        // Feature prints, needed to decide which neighbouring bursts belong together
         let fpWork: [(UUID, URL)] = photos.map { ($0.id, $0.imageURL) }
         var featurePrintMap: [UUID: VNFeaturePrintObservation] = [:]
+        let totalWork = Double(photos.count)
+        var completed = 0.0
         let batchSize = 8
         for batchStart in stride(from: 0, to: fpWork.count, by: batchSize) {
             let batch = Array(fpWork[batchStart..<min(batchStart + batchSize, fpWork.count)])
@@ -70,93 +79,27 @@ struct ShotGrouper {
             }
         }
 
-        // Step 3: Sub-cluster by visual similarity within each time cluster
-        var groups: [PhotoGroup] = []
-        for cluster in timeClusters {
-            if cluster.count <= 1 {
-                groups.append(PhotoGroup(photos: cluster))
-                continue
-            }
-
-            let fps = cluster.compactMap { photo -> (Photo, VNFeaturePrintObservation)? in
-                guard let fp = featurePrintMap[photo.id] else { return nil }
-                return (photo, fp)
-            }
-
-            if fps.isEmpty {
-                groups.append(PhotoGroup(photos: cluster))
-                continue
-            }
-
-            let subGroups = clusterByVisualSimilarity(fps, allPhotos: cluster)
-            groups.append(contentsOf: subGroups)
-        }
-
-        // Step 4: Merge adjacent groups that are very close in time AND visually similar
-        groups = mergeAdjacentGroups(groups, featurePrintMap: featurePrintMap)
-
-        return groups
+        return mergeAdjacentGroups(bursts.map { PhotoGroup(photos: $0) }, featurePrintMap: featurePrintMap)
     }
 
-    private static func clusterByTime(_ photos: [Photo]) -> [[Photo]] {
+    /// Splits photos, in capture order, wherever the gap exceeds `burstGapThreshold`
+    private static func splitIntoBursts(_ photos: [Photo]) -> [[Photo]] {
         let sorted = photos.sorted { ($0.captureDate ?? .distantPast) < ($1.captureDate ?? .distantPast) }
-        var clusters: [[Photo]] = []
+        var bursts: [[Photo]] = []
         var current: [Photo] = []
 
         for photo in sorted {
             if let last = current.last,
                let lastDate = last.captureDate,
                let thisDate = photo.captureDate,
-               thisDate.timeIntervalSince(lastDate) > timeGapThreshold {
-                clusters.append(current)
+               thisDate.timeIntervalSince(lastDate) > burstGapThreshold {
+                bursts.append(current)
                 current = []
             }
             current.append(photo)
         }
-        if !current.isEmpty { clusters.append(current) }
-        return clusters
-    }
-
-    private static func clusterByVisualSimilarity(
-        _ featurePrints: [(Photo, VNFeaturePrintObservation)],
-        allPhotos: [Photo]
-    ) -> [PhotoGroup] {
-        var assigned = Set<UUID>()
-        var groups: [PhotoGroup] = []
-
-        for (i, (photo, fp)) in featurePrints.enumerated() {
-            guard !assigned.contains(photo.id) else { continue }
-
-            var cluster = [photo]
-            assigned.insert(photo.id)
-
-            for j in (i + 1)..<featurePrints.count {
-                let (otherPhoto, otherFP) = featurePrints[j]
-                guard !assigned.contains(otherPhoto.id) else { continue }
-
-                var distance: Float = 0
-                do {
-                    try fp.computeDistance(&distance, to: otherFP)
-                } catch {
-                    continue // Incompatible feature prints — treat as not similar
-                }
-
-                if distance < similarityThreshold {
-                    cluster.append(otherPhoto)
-                    assigned.insert(otherPhoto.id)
-                }
-            }
-
-            groups.append(PhotoGroup(photos: cluster))
-        }
-
-        // Add any photos that failed feature print generation
-        let ungrouped = allPhotos.filter { !assigned.contains($0.id) }
-        if !ungrouped.isEmpty {
-            groups.append(PhotoGroup(photos: ungrouped))
-        }
-
-        return groups
+        if !current.isEmpty { bursts.append(current) }
+        return bursts
     }
 
     /// Merge adjacent groups if they're within mergeTimeThreshold and visually similar
@@ -215,8 +158,11 @@ struct ShotGrouper {
     private static func generateFeaturePrint(url: URL) async -> VNFeaturePrintObservation? {
         guard let (source, imageIndex) = bestImageSource(for: url) else { return nil }
 
+        // FromImageAlways, never IfAbsent: ImageIO returns the camera's embedded EXIF
+        // thumbnail when one exists, which is 160px on Sony bodies — too coarse to tell
+        // two similar scenes apart.
         let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: 512,
             kCGImageSourceShouldCache: false,
             kCGImageSourceCreateThumbnailWithTransform: true

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Cull is a macOS photo culling app built in Swift/SwiftUI. It imports RAW+JPEG photos, groups similar shots using temporal clustering and Vision feature prints, detects faces and closed eyes, and provides a keyboard-driven culling workflow with XMP sidecar export for Lightroom/Bridge interoperability.
+Cull is a macOS photo culling app built in Swift/SwiftUI. It imports RAW+JPEG photos, groups shots into bursts and scenes, detects faces and closed eyes, and provides a keyboard-driven culling workflow with XMP sidecar export for Lightroom/Bridge interoperability.
 
 Bundle ID: `sh.dunkirk.cull`. Minimum deployment target: macOS 26.2. Swift 5. Only external dependency is Sparkle (auto-updates). Zero third-party dependencies for the core pipeline — everything uses Apple frameworks (ImageIO, Vision, CoreImage, AppKit).
 
@@ -30,7 +30,7 @@ Import → Group → Analyze → Display → Cull → Export
 ```
 
 1. **PhotoImporter** scans a folder, matches RAW+JPEG pairs by basename, reads EXIF metadata in parallel batches of 16
-2. **ShotGrouper** clusters photos temporally (30s gap threshold), then sub-clusters by visual similarity using `VNGenerateImageFeaturePrintRequest` (threshold 0.6, Revision 2), then merges adjacent groups within 5s that are visually similar
+2. **ShotGrouper** cuts the timeline into bursts (gaps over 3s), then merges *neighboring* bursts that are within 10s and visually similar via `VNGenerateImageFeaturePrintRequest` (threshold 0.6, Revision 2). Bursts are never split, and merging only ever considers neighbors, which is what keeps the browse order chronological
 3. **QualityAnalyzer** detects faces (capture quality + landmarks for EAR blink detection) at 1600px, ordering them as a left-to-right sweep. It carries an `analysisVersion`; workspaces record the version they were analyzed with and re-run on mismatch, so corrections reach existing projects
 4. **ThumbnailCache** provides three-tier caching: NSCache in-memory (500 items, 100MB), disk cache in `~/Library/Caches/sh.dunkirk.Cull.thumbnails/`, and on-demand extraction via `CGImageSourceCreateThumbnailAtIndex`
 5. **CullSession** (`@Observable`) is the central state object passed via `.environment()`. Manages navigation, filters, ratings, flags, undo, and workspace persistence
@@ -72,6 +72,13 @@ Defined in `CullApp.swift` via `.commands`:
 - The codebase uses Revision 2 thresholds (0.0–2.0 range, 768-dim vectors). Revision 1 produces 2048-dim unnormalized vectors with distances up to ~40. Do not mix thresholds across revisions
 - Current similarity threshold is 0.6 (lenient grouping of different framings). Use ~0.35 for near-duplicate detection specifically
 - Feature print generation takes ~15-50ms/image on Apple Silicon (neural network inference bottleneck). Cache aggressively — 768 floats × 4 bytes = ~3KB/image
+- Generate prints from the real image, never the embedded EXIF thumbnail. See the preview cache notes on `kCGImageSourceCreateThumbnailFromImageIfAbsent`: a 160px thumbnail can't distinguish two similar scenes
+
+### Grouping and Chronological Order
+- Groups must never interleave in time, or walking through the library with the arrow keys runs the clock backwards at group boundaries. The old approach (gather every visually similar photo inside a 30s-gap time cluster) broke this badly: two subjects shot in alternation became two groups spanning the same minutes, producing 76 backward steps over 1025 photos
+- The guarantee is structural, not tuned: bursts are contiguous by definition and merging only ever combines a unit with its immediate neighbor, so the sequence cannot rewind
+- EXIF timestamps are whole seconds on most cameras (Sony writes no `SubsecTimeOriginal`), so sub-second burst detection isn't possible. The 3s burst gap is deliberately generous to cover pauses while reframing
+- Measured on a 1025-photo shoot: 3s bursts plus 10s merging gives ~192 groups averaging 5.3 photos
 
 ### Workspace Persistence
 - `.cull.db` lives *in the source photo folder*, not in app support. This makes workspaces portable but means the app needs security-scoped resource access
