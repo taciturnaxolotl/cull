@@ -22,6 +22,12 @@ enum ExportFolderStructure: String, CaseIterable, Identifiable {
     case ratingAndType = "By rating, RAW / JPEG"
 
     var id: String { rawValue }
+
+    /// Whether this layout sorts files into RAW and JPEG folders, which only means
+    /// something when the library actually holds both
+    var splitsByFileType: Bool {
+        self == .separateRawJpeg || self == .ratingAndType
+    }
 }
 
 struct ExportResult {

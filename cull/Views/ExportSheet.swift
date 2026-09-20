@@ -20,6 +20,28 @@ struct ExportSheet: View {
         return session.allPhotos
     }
 
+    /// Whether RAW and JPEG are both in play, either as pairs or as a mix of loose files.
+    /// When they aren't, the file-type choice and the RAW/JPEG folder layouts are just
+    /// noise: there's only one kind of file to export.
+    private var hasBothFormats: Bool {
+        let photos = session.allPhotos
+        if photos.contains(where: { $0.pairedURL != nil }) { return true }
+
+        var sawRAW = false
+        var sawOther = false
+        for photo in photos {
+            if photo.isRAW { sawRAW = true } else { sawOther = true }
+            if sawRAW && sawOther { return true }
+        }
+        return false
+    }
+
+    private var availableStructures: [ExportFolderStructure] {
+        hasBothFormats
+            ? ExportFolderStructure.allCases
+            : ExportFolderStructure.allCases.filter { !$0.splitsByFileType }
+    }
+
     var body: some View {
         VStack(spacing: 20) {
             Text("Export Photos")
@@ -29,9 +51,11 @@ struct ExportSheet: View {
                 Toggle("Export only visible photos", isOn: $useCurrentFilters)
                 Toggle("Include XMP sidecars", isOn: $includeXMP)
 
-                Picker("File Type", selection: $fileType) {
-                    ForEach(ExportFileType.allCases) { type in
-                        Text(type.rawValue).tag(type)
+                if hasBothFormats {
+                    Picker("File Type", selection: $fileType) {
+                        ForEach(ExportFileType.allCases) { type in
+                            Text(type.rawValue).tag(type)
+                        }
                     }
                 }
 
@@ -42,7 +66,7 @@ struct ExportSheet: View {
                 }
 
                 Picker("Folder Structure", selection: $folderStructure) {
-                    ForEach(ExportFolderStructure.allCases) { structure in
+                    ForEach(availableStructures) { structure in
                         Text(structure.rawValue).tag(structure)
                     }
                 }
@@ -100,6 +124,13 @@ struct ExportSheet: View {
         }
         .padding(20)
         .frame(width: 400)
+        .onAppear {
+            // A one-format library has no meaningful type choice; make sure a layout
+            // left over from a mixed library doesn't stay selected
+            guard !hasBothFormats else { return }
+            fileType = .both
+            if folderStructure.splitsByFileType { folderStructure = .flat }
+        }
     }
 
     private func chooseDestination() {
