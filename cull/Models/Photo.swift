@@ -20,9 +20,6 @@ final class Photo: Identifiable {
     var flag: PhotoFlag = .none
 
     // Populated asynchronously by QualityAnalyzer
-    var blurScore: Double?
-    /// Laplacian variance measured on the face crop — actual face sharpness
-    var faceSharpness: Double?
     /// Normalized face bounding boxes (Vision coordinates: origin bottom-left, 0-1 range)
     var faceRegions: [CGRect] = []
     /// Per-face Eye Aspect Ratio, parallel to faceRegions (0 = closed, ~0.3 = wide open)

@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-Cull is a macOS photo culling app built in Swift/SwiftUI. It imports RAW+JPEG photos, groups similar shots using temporal clustering and Vision feature prints, analyzes image quality (blur, face sharpness, eye openness), and provides a keyboard-driven culling workflow with XMP sidecar export for Lightroom/Bridge interoperability.
+Cull is a macOS photo culling app built in Swift/SwiftUI. It imports RAW+JPEG photos, groups similar shots using temporal clustering and Vision feature prints, detects faces and closed eyes, and provides a keyboard-driven culling workflow with XMP sidecar export for Lightroom/Bridge interoperability.
 
-Bundle ID: `sh.dunkirk.cull`. Minimum deployment target: macOS 26.2. Swift 5. Only external dependency is Sparkle (auto-updates). Zero third-party dependencies for the core pipeline — everything uses Apple frameworks (ImageIO, Vision, Accelerate, CoreImage, Metal Performance Shaders via vDSP).
+Bundle ID: `sh.dunkirk.cull`. Minimum deployment target: macOS 26.2. Swift 5. Only external dependency is Sparkle (auto-updates). Zero third-party dependencies for the core pipeline — everything uses Apple frameworks (ImageIO, Vision, CoreImage, AppKit).
 
 ## Build & Run
 
@@ -31,7 +31,7 @@ Import → Group → Analyze → Display → Cull → Export
 
 1. **PhotoImporter** scans a folder, matches RAW+JPEG pairs by basename, reads EXIF metadata in parallel batches of 16
 2. **ShotGrouper** clusters photos temporally (30s gap threshold), then sub-clusters by visual similarity using `VNGenerateImageFeaturePrintRequest` (threshold 0.6, Revision 2), then merges adjacent groups within 5s that are visually similar
-3. **QualityAnalyzer** runs blur detection (Laplacian variance via vDSP with ISO noise compensation) and face analysis (capture quality + landmarks for EAR blink detection) in parallel
+3. **QualityAnalyzer** detects faces (capture quality + landmarks for EAR blink detection) at 1600px, ordering them as a left-to-right sweep. It carries an `analysisVersion`; workspaces record the version they were analyzed with and re-run on mismatch, so corrections reach existing projects
 4. **ThumbnailCache** provides three-tier caching: NSCache in-memory (500 items, 100MB), disk cache in `~/Library/Caches/sh.dunkirk.Cull.thumbnails/`, and on-demand extraction via `CGImageSourceCreateThumbnailAtIndex`
 5. **CullSession** (`@Observable`) is the central state object passed via `.environment()`. Manages navigation, filters, ratings, flags, undo, and workspace persistence
 6. **WorkspaceDB** persists all state to `.cull.db` (SQLite, WAL mode) in the source photo folder. Debounced auto-save at 500ms. Saves photos+groups in a single transaction for atomicity
@@ -39,14 +39,14 @@ Import → Group → Analyze → Display → Cull → Export
 
 ### Key Models
 
-- **Photo** (`@Observable`): id, url, pairedURL, rating (0-5), flag (none/pick/reject), blurScore, faceSharpness, faceRegions, eyeAspectRatios, captureDate, pixel dimensions. `imageURL` prefers the paired JPEG for decode speed
+- **Photo** (`@Observable`): id, url, pairedURL, rating (0-5), flag (none/pick/reject), faceRegions, eyeAspectRatios, captureDate, pixel dimensions. `imageURL` prefers the paired JPEG for decode speed
 - **PhotoGroup** (`@Observable`): id, photos array, representativePhoto, earliestDate
-- **CullSession** (`@Observable`): groups, selectedGroupIndex, selectedPhotoIndex, zoomFaceIndex, filter state, workspace DB handle
+- **CullSession** (`@Observable`): groups, selectedGroupIndex, selectedPhotoIndex, zoom transform (zoomScale + zoomAnchor + zoomFaceIndex), filter state, workspace DB handle
 
 ### View Structure
 
 - **ContentView**: top-level router (import → progress → empty → culling). Receives notifications for openFolder, showExport, reimport
-- **PhotoViewer**: main culling view with progressive image loading (thumbnail → preview), face overlays, zoom cycling (fit → face 0 → face 1 → ... → center → fit), debug cache overlay
+- **PhotoViewer**: main culling view with progressive image loading (thumbnail → preview), face overlays, zoom and pan (wheel/pinch to zoom, drag or two-finger scroll to pan, space to cycle presets), debug cache overlay
 - **GroupListView / GroupDetailView**: sidebar navigation
 - **ExportSheet**: copy/move with folder structure options (flat, RAW/JPEG split, by rating, combined)
 - **SettingsView**: app preferences
@@ -139,4 +139,4 @@ Key WWDC sessions for the underlying APIs:
 - "Demystify SwiftUI Performance" (2023) — grid optimization
 - "Images and Graphics Best Practices" (2018) — image downsampling
 - "Optimize your Core ML usage" (2022) — Vision/ML profiling
-- Apple sample project "Finding the Sharpest Image in a Sequence of Captured Images" — Accelerate-based blur detection reference
+- Apple sample project "Finding the Sharpest Image in a Sequence of Captured Images" — Accelerate blur detection (removed in favor of judging focus by eye; kept here as a pointer if it's ever revisited)

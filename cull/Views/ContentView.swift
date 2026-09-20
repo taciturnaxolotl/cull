@@ -204,12 +204,35 @@ struct ContentView: View {
                         }
                     }
 
+                    // Re-score photos analyzed by an older version of the analyzer
+                    let stale = wsResult.staleAnalysis
+                    // Re-scoring dominates the wait when it runs, so give it most of the bar
+                    let analysisShare = stale.isEmpty ? 0.0 : 0.5
+                    if !stale.isEmpty {
+                        await MainActor.run { s.importStatus = "Updating analysis for \(stale.count) photos..." }
+                        var done = 0.0
+                        for batchStart in stride(from: 0, to: stale.count, by: 8) {
+                            let batch = Array(stale[batchStart..<min(batchStart + 8, stale.count)])
+                            await withTaskGroup(of: Void.self) { group in
+                                for photo in batch {
+                                    group.addTask { await QualityAnalyzer.analyze(photo: photo) }
+                                }
+                            }
+                            done += Double(batch.count)
+                            let p = done / Double(stale.count) * analysisShare
+                            await MainActor.run {
+                                withAnimation(.linear(duration: 0.2)) { s.importProgress = p }
+                            }
+                        }
+                    }
+
                     // Load thumbnails and previews (only visible/unfiltered photos)
+                    let thumbShare = (1.0 - analysisShare) * 0.7
                     await MainActor.run { s.importStatus = "Loading thumbnails..." }
                     await c.preloadAllThumbnails(photos: visiblePhotos) { p in
                         await MainActor.run {
                             withAnimation(.linear(duration: 0.2)) {
-                                s.importProgress = p * 0.7
+                                s.importProgress = analysisShare + p * thumbShare
                             }
                         }
                     }
@@ -218,10 +241,11 @@ struct ContentView: View {
                     let ahead = Array(visiblePhotos.prefix(24))
                     let behind = Array(visiblePhotos.suffix(12))
                     let initialPreviews = ahead + behind.reversed()
+                    let previewBase = analysisShare + thumbShare
                     await c.preloadAllPreviews(photos: initialPreviews) { p in
                         await MainActor.run {
                             withAnimation(.linear(duration: 0.2)) {
-                                s.importProgress = 0.7 + p * 0.3
+                                s.importProgress = previewBase + p * (1.0 - previewBase)
                             }
                         }
                     }
@@ -229,7 +253,7 @@ struct ContentView: View {
                     await MainActor.run {
                         s.importProgress = 1.0
                         s.isImporting = false
-                        if !newPhotos.isEmpty {
+                        if !newPhotos.isEmpty || !stale.isEmpty {
                             s.saveWorkspace()
                         }
                     }
@@ -476,7 +500,7 @@ struct ContentView: View {
             Divider()
 
             // Right: Large preview
-            PhotoViewer()
+            PhotoViewer(isViewerFocused: $isViewerFocused)
         }
         .focusable()
         .focused($isViewerFocused)
@@ -505,46 +529,6 @@ struct ContentView: View {
             ExportSheet()
         }
     }
-}
-
-extension ContentView {
-    /// Quality score for ranking within a group. Higher = better.
-    /// With faces: face sharpness (Laplacian on face crop) is the score.
-    /// Without faces: global blur score relative to group peers.
-    static func qualityScore(_ photo: Photo, in group: PhotoGroup) -> Double {
-        let peers = group.photos
-        var score: Double
-
-        if let faceSharp = photo.faceSharpness, !photo.faceRegions.isEmpty {
-            // Face detected — use face-region sharpness (Laplacian on face crop).
-            // Normalize relative to peers who also have faces.
-            let peerFaceScores = peers.compactMap(\.faceSharpness)
-            if let maxF = peerFaceScores.max(), let minF = peerFaceScores.min(), maxF > minF {
-                score = (faceSharp - minF) / (maxF - minF)
-            } else {
-                score = 0.5
-            }
-        } else {
-            // No faces — use global blur score
-            score = normalizedBlur(photo, peers: peers)
-        }
-
-        // Penalize photos with closed eyes
-        if photo.eyeAspectRatios.contains(where: { $0 < 0.20 }) {
-            score *= 0.3
-        }
-
-        return score
-    }
-
-    /// Normalize blur score relative to group peers (0-1 range)
-    private static func normalizedBlur(_ photo: Photo, peers: [Photo]) -> Double {
-        guard let blur = photo.blurScore else { return 0.5 }
-        let peerBlurs = peers.compactMap(\.blurScore)
-        guard let maxB = peerBlurs.max(), let minB = peerBlurs.min(), maxB > minB else { return 0.5 }
-        return (blur - minB) / (maxB - minB)
-    }
-
 }
 
 struct ToolbarFilterButton: View {

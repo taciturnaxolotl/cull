@@ -33,8 +33,6 @@ final class WorkspaceDB: @unchecked Sendable {
                 paired_path TEXT,
                 rating INTEGER DEFAULT 0,
                 flag TEXT DEFAULT 'none',
-                blur_score REAL,
-                face_sharpness REAL,
                 face_regions TEXT,
                 pixel_width INTEGER DEFAULT 0,
                 pixel_height INTEGER DEFAULT 0,
@@ -78,11 +76,11 @@ final class WorkspaceDB: @unchecked Sendable {
 
         let photoStmt = prepare("""
             INSERT OR REPLACE INTO photos
-            (path, paired_path, rating, flag, blur_score, face_sharpness, face_regions,
+            (path, paired_path, rating, flag, face_regions,
              pixel_width, pixel_height, file_size,
              paired_pixel_width, paired_pixel_height, paired_file_size, capture_date, group_id,
              eye_aspect_ratios)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """)
         defer { sqlite3_finalize(photoStmt) }
 
@@ -94,18 +92,16 @@ final class WorkspaceDB: @unchecked Sendable {
                 bind(photoStmt, 2, photo.pairedURL?.relativePath(from: sourceFolder))
                 bind(photoStmt, 3, photo.rating)
                 bind(photoStmt, 4, flagToString(photo.flag))
-                bind(photoStmt, 5, photo.blurScore)
-                bind(photoStmt, 6, photo.faceSharpness)
-                bind(photoStmt, 7, encodeRegions(photo.faceRegions))
-                bind(photoStmt, 8, photo.pixelWidth)
-                bind(photoStmt, 9, photo.pixelHeight)
-                bind(photoStmt, 10, photo.fileSize)
-                bind(photoStmt, 11, photo.pairedPixelWidth)
-                bind(photoStmt, 12, photo.pairedPixelHeight)
-                bind(photoStmt, 13, photo.pairedFileSize)
-                bind(photoStmt, 14, photo.captureDate?.timeIntervalSinceReferenceDate)
-                bind(photoStmt, 15, group.id.uuidString)
-                bind(photoStmt, 16, encodeDoubles(photo.eyeAspectRatios))
+                bind(photoStmt, 5, encodeRegions(photo.faceRegions))
+                bind(photoStmt, 6, photo.pixelWidth)
+                bind(photoStmt, 7, photo.pixelHeight)
+                bind(photoStmt, 8, photo.fileSize)
+                bind(photoStmt, 9, photo.pairedPixelWidth)
+                bind(photoStmt, 10, photo.pairedPixelHeight)
+                bind(photoStmt, 11, photo.pairedFileSize)
+                bind(photoStmt, 12, photo.captureDate?.timeIntervalSinceReferenceDate)
+                bind(photoStmt, 13, group.id.uuidString)
+                bind(photoStmt, 14, encodeDoubles(photo.eyeAspectRatios))
                 sqlite3_step(photoStmt)
             }
         }
@@ -151,6 +147,7 @@ final class WorkspaceDB: @unchecked Sendable {
         saveSetting("hideUnrated", session.hideUnrated ? "1" : "0")
         saveSetting("hiddenRatings", session.hiddenRatings.map(String.init).joined(separator: ","))
         saveSetting("importRecursive", session.importRecursive ? "1" : "0")
+        saveSetting("analysisVersion", "\(QualityAnalyzer.analysisVersion)")
     }
 
     // MARK: - Load
@@ -160,8 +157,6 @@ final class WorkspaceDB: @unchecked Sendable {
         let pairedPath: String?
         let rating: Int
         let flag: PhotoFlag
-        let blurScore: Double?
-        let faceSharpness: Double?
         let faceRegions: [CGRect]
         let pixelWidth: Int
         let pixelHeight: Int
@@ -175,7 +170,15 @@ final class WorkspaceDB: @unchecked Sendable {
     }
 
     func loadPhotos() -> [SavedPhoto] {
-        let stmt = prepare("SELECT * FROM photos")
+        // Columns are listed by name rather than SELECT *: workspaces written by older
+        // versions carry retired columns, and positional reads would silently shift.
+        let stmt = prepare("""
+            SELECT path, paired_path, rating, flag, face_regions,
+                   pixel_width, pixel_height, file_size,
+                   paired_pixel_width, paired_pixel_height, paired_file_size,
+                   capture_date, group_id, eye_aspect_ratios
+            FROM photos
+        """)
         defer { sqlite3_finalize(stmt) }
 
         var results: [SavedPhoto] = []
@@ -184,26 +187,22 @@ final class WorkspaceDB: @unchecked Sendable {
             let pairedPath = getString(stmt, 1)
             let rating = Int(sqlite3_column_int(stmt, 2))
             let flag = stringToFlag(getString(stmt, 3) ?? "none")
-            let blurScore = getOptionalDouble(stmt, 4)
-            let faceSharpness = getOptionalDouble(stmt, 5)
-            let regionsJSON = getString(stmt, 6)
-            let pixelWidth = Int(sqlite3_column_int(stmt, 7))
-            let pixelHeight = Int(sqlite3_column_int(stmt, 8))
-            let fileSize = sqlite3_column_int64(stmt, 9)
-            let pairedPixelWidth = Int(sqlite3_column_int(stmt, 10))
-            let pairedPixelHeight = Int(sqlite3_column_int(stmt, 11))
-            let pairedFileSize = sqlite3_column_int64(stmt, 12)
-            let captureDateInterval = getOptionalDouble(stmt, 13)
-            let groupID = getString(stmt, 14)
-            let earJSON = getString(stmt, 15)
+            let regionsJSON = getString(stmt, 4)
+            let pixelWidth = Int(sqlite3_column_int(stmt, 5))
+            let pixelHeight = Int(sqlite3_column_int(stmt, 6))
+            let fileSize = sqlite3_column_int64(stmt, 7)
+            let pairedPixelWidth = Int(sqlite3_column_int(stmt, 8))
+            let pairedPixelHeight = Int(sqlite3_column_int(stmt, 9))
+            let pairedFileSize = sqlite3_column_int64(stmt, 10)
+            let captureDateInterval = getOptionalDouble(stmt, 11)
+            let groupID = getString(stmt, 12)
+            let earJSON = getString(stmt, 13)
 
             results.append(SavedPhoto(
                 path: path,
                 pairedPath: pairedPath,
                 rating: rating,
                 flag: flag,
-                blurScore: blurScore,
-                faceSharpness: faceSharpness,
                 faceRegions: decodeRegions(regionsJSON),
                 pixelWidth: pixelWidth,
                 pixelHeight: pixelHeight,

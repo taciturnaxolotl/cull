@@ -25,6 +25,10 @@ final class CullSession {
 
     /// Zoom state: nil = fit, -1 = center zoom, 0+ = face index
     var zoomFaceIndex: Int? = nil
+    /// Magnification relative to fit. 1 = whole photo visible.
+    var zoomScale: CGFloat = 1
+    /// Point held at the center of the view, normalized to the image with a top-left origin
+    var zoomAnchor: CGPoint = CGPoint(x: 0.5, y: 0.5)
 
     var importRecursive: Bool = true
     var isImporting: Bool = false
@@ -132,6 +136,12 @@ final class CullSession {
         }
     }
 
+    /// Step forward one photo, continuing into the next group at its first photo.
+    ///
+    /// Walking past the end of a group lands on the start of the next one rather than
+    /// the cursor remembered there. Remembered positions are for jumping between groups
+    /// with the group keys; while stepping through photos in order, skipping ahead to
+    /// wherever you last were just loses your place.
     func moveToNextPhoto() {
         guard let group = selectedGroup else { return }
         // Try to find next visible photo in current group
@@ -141,10 +151,15 @@ final class CullSession {
                 return
             }
         }
-        // Exhausted group, move to next
+        // Exhausted group, continue at the start of the next one
         moveToNextGroup()
+        if let newGroup = selectedGroup,
+           let first = newGroup.photos.firstIndex(where: { !isPhotoFiltered($0) }) {
+            selectedPhotoIndex = first
+        }
     }
 
+    /// Step back one photo, continuing into the previous group at its last photo
     func moveToPreviousPhoto() {
         guard let group = selectedGroup else { return }
         // Try to find previous visible photo in current group
@@ -154,16 +169,11 @@ final class CullSession {
                 return
             }
         }
-        // Exhausted group, move to previous
+        // Exhausted group, continue at the end of the previous one
         moveToPreviousGroup()
-        // Land on last visible photo in new group
-        if let newGroup = selectedGroup {
-            for i in stride(from: newGroup.photos.count - 1, through: 0, by: -1) {
-                if !isPhotoFiltered(newGroup.photos[i]) {
-                    selectedPhotoIndex = i
-                        return
-                }
-            }
+        if let newGroup = selectedGroup,
+           let last = newGroup.photos.lastIndex(where: { !isPhotoFiltered($0) }) {
+            selectedPhotoIndex = last
         }
     }
 
@@ -358,33 +368,122 @@ final class CullSession {
 
     // MARK: - Zoom
 
+    /// The zoom transform is kept in geometry-free terms — a magnification and a point
+    /// in normalized image coordinates to hold at the center of the view — so the model
+    /// doesn't need to know the window size. The viewer turns it into an offset and
+    /// clamps it against the edges of the photo.
+    var zoomedIn: Bool { zoomScale > 1.001 }
+
+    static let minZoom: CGFloat = 1
+    static let maxZoom: CGFloat = 12
+    static let centerZoomScale: CGFloat = 2.5
+
+    /// Magnification that makes a face fill roughly a third of the frame
+    static func zoomScale(forFace rect: CGRect) -> CGFloat {
+        min(max(0.35 / max(rect.width, rect.height), 1.5), 5.0)
+    }
+
+    /// Face center as a top-left-origin normalized point (Vision boxes are bottom-left)
+    static func anchor(forFace rect: CGRect) -> CGPoint {
+        CGPoint(x: rect.midX, y: 1 - rect.midY)
+    }
+
     func cycleZoom() {
         guard let photo = selectedPhoto else { return }
         let faces = photo.faceRegions
+
+        // A manual zoom isn't one of the presets, so the first press unwinds it
+        if zoomFaceIndex == nil && zoomedIn {
+            resetZoom()
+            return
+        }
 
         switch zoomFaceIndex {
         case nil:
             // Currently fit → zoom to first face or center
             if faces.isEmpty {
-                zoomFaceIndex = -1 // center zoom
+                zoomTo(scale: Self.centerZoomScale, anchor: CGPoint(x: 0.5, y: 0.5), faceIndex: -1)
             } else {
-                zoomFaceIndex = 0 // first face
+                zoomToFace(0, of: photo)
             }
         case -1:
             // Center zoom → back to fit
-            zoomFaceIndex = nil
+            resetZoom()
         case let idx?:
             // On a face → next face, or back to fit
             if idx + 1 < faces.count {
-                zoomFaceIndex = idx + 1
+                zoomToFace(idx + 1, of: photo)
             } else {
-                zoomFaceIndex = nil
+                resetZoom()
             }
         }
     }
 
-    private func resetZoom() {
+    private func zoomToFace(_ index: Int, of photo: Photo) {
+        guard photo.faceRegions.indices.contains(index) else { return }
+        let rect = photo.faceRegions[index]
+        zoomTo(scale: Self.zoomScale(forFace: rect), anchor: Self.anchor(forFace: rect), faceIndex: index)
+    }
+
+    private func zoomTo(scale: CGFloat, anchor: CGPoint, faceIndex: Int?) {
+        zoomScale = scale
+        zoomAnchor = anchor
+        zoomFaceIndex = faceIndex
+    }
+
+    /// Scale and recenter from a gesture. Leaves any face-follow mode, since the user
+    /// is now driving the view themselves.
+    func setManualZoom(scale: CGFloat, anchor: CGPoint) {
+        zoomScale = min(max(scale, Self.minZoom), Self.maxZoom)
         zoomFaceIndex = nil
+        zoomAnchor = zoomedIn ? anchor : CGPoint(x: 0.5, y: 0.5)
+    }
+
+    /// Farthest a face can be from where you're looking and still be treated as the same
+    /// subject moving. Detection is noisy frame to frame and people leave the shot, so
+    /// beyond this the nearest face is somebody else and jumping to them is just a lurch
+    /// across the frame. Holding position instead removes the worst tenth of the jumps.
+    static let faceFollowRadius: CGFloat = 0.25
+
+    /// While following a face, re-aim at the nearest face in the newly selected photo.
+    ///
+    /// Face order isn't stable between frames — people turn, detection drops in and out,
+    /// and the index that meant one person a moment ago can mean another. Following
+    /// position rather than index keeps the same subject framed through a burst. The
+    /// magnification is deliberately left alone: re-deriving it from each face's size
+    /// made the view breathe in and out on every step.
+    func retargetFaceZoom(for photo: Photo) {
+        guard let index = zoomFaceIndex, index >= 0, zoomedIn else { return }
+        guard !photo.faceRegions.isEmpty else { return }
+
+        let target = zoomAnchor
+        var bestIndex = 0
+        var bestDistance = CGFloat.greatestFiniteMagnitude
+        for (i, rect) in photo.faceRegions.enumerated() {
+            let point = Self.anchor(forFace: rect)
+            let d = hypot(point.x - target.x, point.y - target.y)
+            if d < bestDistance {
+                bestDistance = d
+                bestIndex = i
+            }
+        }
+
+        guard bestDistance <= Self.faceFollowRadius else { return }
+        zoomFaceIndex = bestIndex
+        zoomAnchor = Self.anchor(forFace: photo.faceRegions[bestIndex])
+    }
+
+    /// Recenter on a point without changing magnification
+    func panZoom(to anchor: CGPoint) {
+        guard zoomedIn else { return }
+        zoomFaceIndex = nil
+        zoomAnchor = anchor
+    }
+
+    func resetZoom() {
+        zoomFaceIndex = nil
+        zoomScale = 1
+        zoomAnchor = CGPoint(x: 0.5, y: 0.5)
     }
 
     // MARK: - Security-scoped folder access
@@ -426,6 +525,9 @@ final class CullSession {
 
     struct WorkspaceResult {
         let newPhotos: [Photo]  // photos that need analysis + grouping
+        /// Photos already in the workspace whose stored quality scores were produced by
+        /// an older, since-corrected analysis. They need re-scoring but not re-grouping.
+        let staleAnalysis: [Photo]
     }
 
     /// Opens workspace, returns nil if no cached data. Returns new photos that need processing.
@@ -453,8 +555,6 @@ final class CullSession {
             }
             photo.rating = saved.rating
             photo.flag = saved.flag
-            photo.blurScore = saved.blurScore
-            photo.faceSharpness = saved.faceSharpness
             photo.faceRegions = saved.faceRegions
             photo.pixelWidth = saved.pixelWidth
             photo.pixelHeight = saved.pixelHeight
@@ -538,6 +638,13 @@ final class CullSession {
         // hidden photos, so leaving the cursor there opens the viewer on a blank frame.
         ensureVisibleSelection()
 
-        return WorkspaceResult(newPhotos: newPhotos)
+        // Scores written by an older analysis can't be compared against new ones,
+        // so flag them all for re-scoring rather than leaving a mixed set.
+        let storedVersion = db.loadSetting("analysisVersion").flatMap(Int.init) ?? 0
+        let stale = storedVersion < QualityAnalyzer.analysisVersion
+            ? allPhotos.filter { photo in !newPhotos.contains { $0 === photo } }
+            : []
+
+        return WorkspaceResult(newPhotos: newPhotos, staleAnalysis: stale)
     }
 }

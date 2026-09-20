@@ -7,6 +7,7 @@ struct PhotoViewer: View {
     @State private var displayedPhotoID: UUID?
     /// Tracks what quality level is currently displayed: "preview", "thumbnail", or "none"
     @State private var displayQuality: String = "none"
+    @FocusState.Binding var isViewerFocused: Bool
 
 
     var body: some View {
@@ -25,7 +26,7 @@ struct PhotoViewer: View {
                             .aspectRatio(contentMode: .fit)
                             .overlay {
                                 // Face region overlays (only when not zoomed)
-                                if session.zoomFaceIndex == nil, let photo = session.selectedPhoto, !photo.faceRegions.isEmpty {
+                                if !session.zoomedIn, let photo = session.selectedPhoto, !photo.faceRegions.isEmpty {
                                     faceOverlays(photo: photo, fittedSize: fitted)
                                 }
                             }
@@ -36,6 +37,18 @@ struct PhotoViewer: View {
                     .frame(width: geo.size.width, height: geo.size.height)
                     .clipped()
                     .animation(.easeInOut(duration: 0.3), value: session.zoomFaceIndex)
+                    .overlay {
+                        ZoomPanCatcher(
+                            onZoom: { factor, location in
+                                zoom(by: factor, at: location, fitted: fitted, container: geo.size)
+                            },
+                            onPan: { delta in
+                                pan(by: delta, fitted: fitted, container: geo.size)
+                            },
+                            onClick: { isViewerFocused = true },
+                            isPannable: session.zoomedIn
+                        )
+                    }
                 }
             }
 
@@ -174,42 +187,14 @@ struct PhotoViewer: View {
 
                         Spacer()
 
-                        // Quality scores
+                        // Face count
                         HStack(spacing: 10) {
-                            if let blur = photo.blurScore {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "scope")
-                                    Text(String(format: "%.0f", blur))
-                                }
-                                .foregroundStyle(isPhotoBlurry(photo) ? .orange : .white.opacity(0.6))
-                            }
-
-                            if let fs = photo.faceSharpness {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "face.smiling")
-                                    Text(String(format: "%.0f", fs))
-                                }
-                                .foregroundStyle(.white.opacity(0.7))
-                            }
-
                             if !photo.faceRegions.isEmpty {
                                 HStack(spacing: 3) {
                                     Image(systemName: "person.crop.rectangle")
                                     Text("\(photo.faceRegions.count)")
                                 }
                                 .foregroundStyle(.white.opacity(0.6))
-                            }
-
-                            // Group rank
-                            if let group = session.selectedGroup {
-                                let rank = groupRank(photo: photo, in: group)
-                                if let rank {
-                                    HStack(spacing: 3) {
-                                        Image(systemName: "number")
-                                        Text("\(rank)/\(group.photos.count)")
-                                    }
-                                    .foregroundStyle(rank == 1 ? .green : .white.opacity(0.6))
-                                }
                             }
                         }
                         .font(.caption)
@@ -223,13 +208,6 @@ struct PhotoViewer: View {
                             }
                             .foregroundStyle(.yellow)
                             .font(.caption)
-                        }
-
-                        // Blur badge
-                        if isPhotoBlurry(photo) {
-                            Label("Blurry", systemImage: "eye.slash.fill")
-                                .foregroundStyle(.orange)
-                                .font(.caption)
                         }
 
                         HStack(spacing: 2) {
@@ -264,6 +242,8 @@ struct PhotoViewer: View {
                 return
             }
             displayedPhotoID = photo.id
+            // Following a face: re-aim at the same subject in this photo
+            session.retargetFaceZoom(for: photo)
             // Instant: show whatever we have cached synchronously
             if let cached = cache.cachedPreview(for: photo) {
                 displayImage = cached
@@ -284,6 +264,9 @@ struct PhotoViewer: View {
             // and the preview never loaded, leaving the first photo stuck on its
             // thumbnail until you navigated away and back.
             displayedPhotoID = photoID
+            // Idempotent, and done here as well as in onChange because the two can run
+            // in either order and the anchor is needed before the first frame
+            session.retargetFaceZoom(for: photo)
 
             // Track what this task has put on screen locally. The @State flags describe
             // whichever photo ran last, and this task can start before onChange updates
@@ -346,44 +329,6 @@ struct PhotoViewer: View {
         }
     }
 
-    // MARK: - Group ranking
-
-    /// Ranks photo within its group by quality. Returns 1-based rank, or nil if no scores yet.
-    private func groupRank(photo: Photo, in group: PhotoGroup) -> Int? {
-        let scored = group.photos.filter { $0.blurScore != nil || $0.faceSharpness != nil }
-        guard scored.count >= 2 else { return nil }
-
-        let ranked = scored.sorted { qualityScore($0, in: group) > qualityScore($1, in: group) }
-        guard let idx = ranked.firstIndex(where: { $0.id == photo.id }) else { return nil }
-        return idx + 1
-    }
-
-    private func qualityScore(_ photo: Photo, in group: PhotoGroup) -> Double {
-        ContentView.qualityScore(photo, in: group)
-    }
-
-    // MARK: - Blur detection (relative within group)
-
-    /// Relative blur detection — blurry only if significantly softer than group peers.
-    /// For faces: compares face sharpness. Without faces: compares global blur.
-    private func isPhotoBlurry(_ photo: Photo) -> Bool {
-        guard let group = session.selectedGroup else { return false }
-
-        if !photo.faceRegions.isEmpty {
-            guard let fs = photo.faceSharpness else { return false }
-            let peerScores = group.photos.compactMap(\.faceSharpness)
-            guard peerScores.count >= 2 else { return false }
-            let median = peerScores.sorted()[peerScores.count / 2]
-            return fs < median * 0.4
-        }
-
-        guard let blur = photo.blurScore else { return false }
-        let peerScores = group.photos.compactMap(\.blurScore)
-        guard peerScores.count >= 2 else { return false }
-        let median = peerScores.sorted()[peerScores.count / 2]
-        return blur < median * 0.4
-    }
-
     // MARK: - Formatting
 
     private static func formatFileSize(_ bytes: Int64) -> String {
@@ -405,49 +350,92 @@ struct PhotoViewer: View {
     }
 
     private func currentZoomInfo(fittedSize: CGSize, containerSize: CGSize) -> ZoomInfo {
-        guard let zoomIndex = session.zoomFaceIndex,
-              let photo = session.selectedPhoto else {
-            return ZoomInfo(scale: 1, offset: .zero)
-        }
+        let scale = session.zoomScale
+        guard scale > 1.001 else { return ZoomInfo(scale: 1, offset: .zero) }
 
-        if zoomIndex == -1 {
-            // Center zoom — 2.5x
-            return ZoomInfo(scale: 2.5, offset: .zero)
-        }
-
-        // Zoomed to a face — adapt to current photo's faces
-        guard !photo.faceRegions.isEmpty else {
-            // No faces on this photo — fall back to center zoom
-            return ZoomInfo(scale: 2.5, offset: .zero)
-        }
-
-        // Clamp to available faces
-        let clampedIndex = min(zoomIndex, photo.faceRegions.count - 1)
-        let faceRect = photo.faceRegions[clampedIndex]
-        // Vision coordinates: origin bottom-left, normalized 0-1
-        // Calculate scale so the face takes up ~35% of the view width
-        let faceW = faceRect.width
-        let faceH = faceRect.height
-        let scale = min(max(0.35 / max(faceW, faceH), 1.5), 5.0)
-
-        // Face center in normalized image coords (flip Y)
-        let faceCenterX = faceRect.midX
-        let faceCenterY = 1 - faceRect.midY
-
-        // Face center in fitted image pixel coords
-        let facePixelX = faceCenterX * fittedSize.width
-        let facePixelY = faceCenterY * fittedSize.height
-
-        // Image center in fitted coords
-        let imageCenterX = fittedSize.width / 2
-        let imageCenterY = fittedSize.height / 2
-
-        // Offset to move face center to view center, then multiply by scale
-        let offsetX = (imageCenterX - facePixelX) * scale
-        let offsetY = (imageCenterY - facePixelY) * scale
-
-        return ZoomInfo(scale: scale, offset: CGSize(width: offsetX, height: offsetY))
+        let anchor = clampedAnchor(effectiveAnchor, scale: scale, fitted: fittedSize, container: containerSize)
+        return ZoomInfo(scale: scale, offset: offset(for: anchor, scale: scale, fitted: fittedSize))
     }
+
+    /// Where to center: whatever the zoom is currently aimed at. Face presets and
+    /// face-follow both write the anchor, so the renderer needs no special case.
+    private var effectiveAnchor: CGPoint { session.zoomAnchor }
+
+    /// Offset that brings `anchor` to the center of the container
+    private func offset(for anchor: CGPoint, scale: CGFloat, fitted: CGSize) -> CGSize {
+        CGSize(
+            width: (0.5 - anchor.x) * fitted.width * scale,
+            height: (0.5 - anchor.y) * fitted.height * scale
+        )
+    }
+
+    /// Keep the photo covering the view. Panning past an edge would just reveal
+    /// background, so the anchor is confined to the range that still fills the frame —
+    /// and pinned to center on any axis where the photo is smaller than the view.
+    private func clampedAnchor(_ anchor: CGPoint, scale: CGFloat, fitted: CGSize, container: CGSize) -> CGPoint {
+        func limit(fittedLength: CGFloat, containerLength: CGFloat) -> CGFloat {
+            let scaled = fittedLength * scale
+            guard scaled > containerLength, fittedLength > 0 else { return 0 }
+            return (scaled - containerLength) / 2 / (fittedLength * scale)
+        }
+        let dx = limit(fittedLength: fitted.width, containerLength: container.width)
+        let dy = limit(fittedLength: fitted.height, containerLength: container.height)
+        return CGPoint(
+            x: min(max(anchor.x, 0.5 - dx), 0.5 + dx),
+            y: min(max(anchor.y, 0.5 - dy), 0.5 + dy)
+        )
+    }
+
+    /// Normalized image point currently under a location in view coordinates
+    private func imagePoint(at location: CGPoint, fitted: CGSize, container: CGSize) -> CGPoint {
+        guard fitted.width > 0, fitted.height > 0 else { return CGPoint(x: 0.5, y: 0.5) }
+        let scale = max(session.zoomScale, 0.001)
+        let anchor = clampedAnchor(effectiveAnchor, scale: scale, fitted: fitted, container: container)
+        let currentOffset = offset(for: anchor, scale: scale, fitted: fitted)
+        return CGPoint(
+            x: ((location.x - container.width / 2 - currentOffset.width) / scale + fitted.width / 2) / fitted.width,
+            y: ((location.y - container.height / 2 - currentOffset.height) / scale + fitted.height / 2) / fitted.height
+        )
+    }
+
+    /// Zoom by `factor` while holding the point under the cursor still
+    private func zoom(by factor: CGFloat, at location: CGPoint, fitted: CGSize, container: CGSize) {
+        let newScale = min(max(session.zoomScale * factor, CullSession.minZoom), CullSession.maxZoom)
+        guard newScale != session.zoomScale else { return }
+
+        guard newScale > 1.001 else {
+            session.resetZoom()
+            return
+        }
+
+        // Solve for the anchor that leaves the pointed-at image point where it is
+        let target = imagePoint(at: location, fitted: fitted, container: container)
+        let newOffset = CGSize(
+            width: location.x - container.width / 2 - (target.x * fitted.width - fitted.width / 2) * newScale,
+            height: location.y - container.height / 2 - (target.y * fitted.height - fitted.height / 2) * newScale
+        )
+        let newAnchor = CGPoint(
+            x: 0.5 - newOffset.width / (newScale * fitted.width),
+            y: 0.5 - newOffset.height / (newScale * fitted.height)
+        )
+        session.setManualZoom(
+            scale: newScale,
+            anchor: clampedAnchor(newAnchor, scale: newScale, fitted: fitted, container: container)
+        )
+    }
+
+    /// Shift the view by a drag or scroll delta, in view points
+    private func pan(by delta: CGSize, fitted: CGSize, container: CGSize) {
+        guard session.zoomedIn, fitted.width > 0, fitted.height > 0 else { return }
+        let scale = session.zoomScale
+        let anchor = clampedAnchor(effectiveAnchor, scale: scale, fitted: fitted, container: container)
+        let moved = CGPoint(
+            x: anchor.x - delta.width / (fitted.width * scale),
+            y: anchor.y - delta.height / (fitted.height * scale)
+        )
+        session.panZoom(to: clampedAnchor(moved, scale: scale, fitted: fitted, container: container))
+    }
+
 
     // MARK: - Eye indicator
 
@@ -529,6 +517,106 @@ struct PhotoViewer: View {
                     .offset(y: h * 0.55)
             }
             .position(x: x + w / 2, y: y + h / 2)
+        }
+    }
+}
+
+/// Routes pointer input for zoom and pan.
+///
+/// Built on AppKit because SwiftUI has no scroll-wheel or magnify gesture on macOS, and
+/// because putting every pointer event through one responder avoids a SwiftUI drag
+/// gesture and an AppKit scroll view fighting over the same pixels.
+///
+/// Trackpad and mouse expect opposite things from a scroll, so the two are told apart by
+/// `hasPreciseScrollingDeltas`: a trackpad swipe pans the way it does in Preview, while a
+/// mouse wheel zooms the way it does in Lightroom.
+struct ZoomPanCatcher: NSViewRepresentable {
+    /// Zoom by a multiplicative factor, holding the given point (view coordinates) still
+    var onZoom: (CGFloat, CGPoint) -> Void
+    /// Shift the view by a delta in view points
+    var onPan: (CGSize) -> Void
+    var onClick: () -> Void
+    /// Whether panning is possible, which decides the cursor
+    var isPannable: Bool
+
+    func makeNSView(context: Context) -> CatcherView {
+        let view = CatcherView()
+        apply(to: view)
+        return view
+    }
+
+    func updateNSView(_ view: CatcherView, context: Context) {
+        apply(to: view)
+    }
+
+    private func apply(to view: CatcherView) {
+        view.onZoom = onZoom
+        view.onPan = onPan
+        view.onClick = onClick
+        view.isPannable = isPannable
+        view.window?.invalidateCursorRects(for: view)
+    }
+
+    final class CatcherView: NSView {
+        var onZoom: ((CGFloat, CGPoint) -> Void)?
+        var onPan: ((CGSize) -> Void)?
+        var onClick: (() -> Void)?
+        var isPannable = false
+        private var lastDragPoint: CGPoint?
+
+        /// Keyboard focus belongs to the SwiftUI viewer; this layer only wants the pointer
+        override var acceptsFirstResponder: Bool { false }
+
+        private func viewPoint(_ event: NSEvent) -> CGPoint {
+            let local = convert(event.locationInWindow, from: nil)
+            // AppKit's origin is bottom-left; the zoom math works in SwiftUI's top-left space
+            return CGPoint(x: local.x, y: bounds.height - local.y)
+        }
+
+        override func scrollWheel(with event: NSEvent) {
+            if event.hasPreciseScrollingDeltas {
+                onPan?(CGSize(width: event.scrollingDeltaX, height: event.scrollingDeltaY))
+            } else {
+                // Wheels vary in how much they report per detent, so cap the step
+                let steps = min(max(event.scrollingDeltaY, -3), 3)
+                guard steps != 0 else { return }
+                onZoom?(pow(1.15, steps), viewPoint(event))
+            }
+        }
+
+        override func magnify(with event: NSEvent) {
+            guard event.magnification != 0 else { return }
+            onZoom?(1 + event.magnification, viewPoint(event))
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            lastDragPoint = viewPoint(event)
+            onClick?()
+            if isPannable { NSCursor.closedHand.set() }
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            // Tracked from positions rather than event.deltaY, whose sign convention
+            // differs from the top-left space the zoom math works in
+            let point = viewPoint(event)
+            defer { lastDragPoint = point }
+            guard let last = lastDragPoint else { return }
+            onPan?(CGSize(width: point.x - last.x, height: point.y - last.y))
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            lastDragPoint = nil
+            if event.clickCount == 2 {
+                // Double-click toggles between fit and a close look, like Preview
+                onZoom?(isPannable ? 0.01 : 4, viewPoint(event))
+            }
+            window?.invalidateCursorRects(for: self)
+        }
+
+        override func resetCursorRects() {
+            if isPannable {
+                addCursorRect(bounds, cursor: .openHand)
+            }
         }
     }
 }

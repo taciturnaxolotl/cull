@@ -76,21 +76,9 @@ private struct PhotoThumbnail: View {
                                 .foregroundStyle(.yellow)
                                 .font(.caption)
                         }
-                        // Blur badge — hybrid: trust face quality for bokeh shots
-                        else if isPhotoBlurry() {
-                            Image(systemName: "eye.slash.fill")
-                                .foregroundStyle(.orange)
-                                .font(.caption)
-                        }
                     }
                     Spacer()
                     HStack {
-                        // Best-in-group badge
-                        if isBestInGroup() {
-                            Image(systemName: "star.circle.fill")
-                                .foregroundStyle(.green)
-                                .font(.caption)
-                        }
                         Spacer()
                         // Face count badge
                         if !photo.faceRegions.isEmpty {
@@ -147,31 +135,5 @@ private struct PhotoThumbnail: View {
             guard thumbnail == nil else { return }
             thumbnail = await cache.thumbnail(for: photo)
         }
-    }
-
-    private func isBestInGroup() -> Bool {
-        let scored = group.photos.filter { $0.blurScore != nil || $0.faceSharpness != nil }
-        guard scored.count >= 2 else { return false }
-        let best = scored.max { qualityScore($0) < qualityScore($1) }
-        return best?.id == photo.id
-    }
-
-    private func qualityScore(_ p: Photo) -> Double {
-        ContentView.qualityScore(p, in: group)
-    }
-
-    private func isPhotoBlurry() -> Bool {
-        if !photo.faceRegions.isEmpty {
-            guard let fs = photo.faceSharpness else { return false }
-            let peerScores = group.photos.compactMap { $0.faceSharpness }
-            guard peerScores.count >= 2 else { return false }
-            let median = peerScores.sorted()[peerScores.count / 2]
-            return fs < median * 0.4
-        }
-        guard let blur = photo.blurScore else { return false }
-        let peerScores = group.photos.compactMap { $0.blurScore }
-        guard peerScores.count >= 2 else { return false }
-        let median = peerScores.sorted()[peerScores.count / 2]
-        return blur < median * 0.4
     }
 }
