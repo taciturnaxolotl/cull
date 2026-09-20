@@ -2,7 +2,10 @@ name: Release Build
 
 on:
   release:
-    types: [created]
+    # `published`, not `created`: GitHub never fires `created` for a draft, so a release
+    # reviewed as a draft and then published would otherwise never build. Listening for
+    # both would double-fire on a release published directly, building it twice.
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
