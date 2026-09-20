@@ -93,10 +93,21 @@ Defined in `CullApp.swift` via `.commands`:
 - Disk cache filenames use a SHA256 hash of the URL to avoid filesystem issues with long paths
 - `cacheGeneration` counter bumps on state changes to trigger SwiftUI re-renders for the debug overlay
 
+### Preview Cache Sizing
+- Previews are the app's real memory footprint: a 2560px preview of a 24MP frame decodes to ~17MB. The preview cache is bounded by `totalCostLimit` (1GB), not `countLimit`, so per-image costs must be accurate or the cache silently holds a fraction of what it should
+- Measure cost from `NSImage.size`, never from `representations.first.pixelsWide`. An `NSImage(cgImage:size:)` is backed by an `NSCGImageSnapshotRep` that reports pixel dimensions multiplied by the display scale factor — on Retina that overstates every preview by 4x. A disk-loaded `NSBitmapImageRep` reports true pixels, so the two disagree and only `size` is correct for both
+- Keep `CullSession.previewWindow()` comfortably under the byte budget (~37 entries, ~650MB against 1GB). NSCache eviction order is unspecified, so a window sized to the brim loses photos the user is walking toward
+- Preview decode is not the bottleneck: ~65ms serial, ~17ms/image at 4-way parallelism for 6000x4000 JPEGs on Apple Silicon. If previews feel slow, suspect eviction or a skipped display update before suspecting decode
+- `kCGImageSourceCreateThumbnailFromImageIfAbsent` returns the *embedded* EXIF thumbnail whenever one exists, treating `kCGImageSourceThumbnailMaxPixelSize` as a ceiling only. Sony JPEGs carry a 160px thumbnail, so strip thumbnails come back at 160px despite the 400px request
+
+### Viewer Load State
+- `PhotoViewer`'s load task tracks what it has displayed in a local variable, not by reading back `@State`. SwiftUI can start `.task` before `onAppear` and before `onChange` updates those flags, so they may still describe the previous photo
+- Never gate the full-res upgrade on "is it cached?" — the background loader frequently caches the current photo mid-task, and the viewer then skips the upgrade and sits on the thumbnail
+
 ### Progress Reporting During Import
 - Import has three parallel streams (analysis 40%, thumbnails 35%, previews 25%) after the initial grouping phase (0-20%)
 - Uses `nonisolated(unsafe)` for progress variables shared across concurrent tasks — safe because each variable is written by exactly one task
-- Preview preloading only loads the first 30 and last 30 photos initially; the rest load on demand
+- Preview preloading at import only covers the first 24 and last 12 visible photos; the rest load on demand through the navigation window
 
 ### Notification-Based Communication
 - Cross-component communication uses `NotificationCenter` with custom names (`.openFolder`, `.showExport`, `.reimport`), not bindings or environment. This decouples menu commands from views

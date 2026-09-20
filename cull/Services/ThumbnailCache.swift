@@ -395,9 +395,13 @@ final class ThumbnailCache {
     // MARK: - Utilities
 
     /// Approximate decoded size in bytes, so NSCache's byte budget means something.
+    ///
+    /// Measured from the logical size rather than the first representation:
+    /// a CGImage-backed NSImage reports `pixelsWide` scaled by the display factor,
+    /// which on Retina overstated every preview by 4x and shrank the effective cache
+    /// to a handful of images.
     nonisolated private static func cost(of image: NSImage) -> Int {
-        guard let rep = image.representations.first else { return 1 }
-        return max(rep.pixelsWide * rep.pixelsHigh * 4, 1)
+        max(Int(image.size.width * image.size.height) * 4, 1)
     }
 
     private func stableDiskKey(for url: URL) -> String {

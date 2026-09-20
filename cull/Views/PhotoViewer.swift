@@ -296,6 +296,13 @@ struct PhotoViewer: View {
                 showing = "preview"
             }
 
+            // Queue the neighbors before doing anything slow. The loader keeps its place
+            // across selection changes, so starting it now means prefetching continues
+            // while you walk through a group instead of restarting after every photo.
+            // The current photo is dropped from the queue since this task loads it below.
+            let window = session.previewWindow()
+            cache.preloadPreviews(photos: Array(window.dropFirst()))
+
             // Nothing cached — pull the thumbnail so the viewer shows something while
             // the preview decodes. Photos a filter hides are never preloaded, so landing
             // on one used to mean staring at a blank frame.
@@ -306,8 +313,8 @@ struct PhotoViewer: View {
                 showing = "thumbnail"
             }
 
-            // Wait for user to pause before computing preload window
-            try? await Task.sleep(for: .milliseconds(150))
+            // Settle briefly so holding an arrow key doesn't decode every photo it passes
+            try? await Task.sleep(for: .milliseconds(60))
             guard !Task.isCancelled, displayedPhotoID == photoID else { return }
 
             // Show the full-res preview. Gate on what's on screen, not on what's in the
@@ -321,10 +328,7 @@ struct PhotoViewer: View {
                 displayQuality = "preview"
             }
 
-            // Preload window: group reps prioritized over linear neighbors
             guard !Task.isCancelled, displayedPhotoID == photoID else { return }
-            let window = session.previewWindow()
-            cache.preloadPreviews(photos: window)
             cache.evictPreviews(keeping: window)
         }
         .onAppear {

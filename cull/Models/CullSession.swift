@@ -284,7 +284,11 @@ final class CullSession {
     /// between scenes and walking through one feel instant. Entries are deduplicated:
     /// neighbors and representatives overlap heavily once a filter hides photos, and
     /// duplicates used to eat window slots that real photos needed.
-    func previewWindow(lookahead: Int = 20, lookbehind: Int = 12, groupCount: Int = 10) -> [Photo] {
+    ///
+    /// Keep the total comfortably under the preview cache's byte budget. A 24 MP
+    /// preview runs ~17 MB, so ~37 entries is roughly 650 MB against a 1 GB budget;
+    /// sizing it to the brim just makes the cache evict photos you are about to reach.
+    func previewWindow(lookahead: Int = 14, lookbehind: Int = 6, groupCount: Int = 8) -> [Photo] {
         guard let current = selectedPhoto else { return [] }
 
         let reps = adjacentGroupRepresentatives(groupCount: groupCount)
