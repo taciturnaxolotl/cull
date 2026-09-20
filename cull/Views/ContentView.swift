@@ -63,6 +63,7 @@ struct ContentView: View {
                 .opacity(isCulling ? 1 : 0)
                 .disabled(!isCulling)
             }
+            .sharedBackgroundVisibility(isCulling ? .automatic : .hidden)
 
             ToolbarItem(placement: .automatic) {
                 HStack(spacing: 2) {
@@ -95,6 +96,7 @@ struct ContentView: View {
                 .opacity(isCulling ? 1 : 0)
                 .disabled(!isCulling)
             }
+            .sharedBackgroundVisibility(isCulling ? .automatic : .hidden)
 
             ToolbarItem(placement: .automatic) {
                 Spacer()
@@ -108,6 +110,7 @@ struct ContentView: View {
                 .opacity(isCulling ? 1 : 0)
                 .disabled(!isCulling)
             }
+            .sharedBackgroundVisibility(isCulling ? .automatic : .hidden)
 
             ToolbarItem(placement: .automatic) {
                 Button { session.closeSourceFolder() } label: {
@@ -117,6 +120,7 @@ struct ContentView: View {
                 .opacity(isCulling ? 1 : 0)
                 .disabled(!isCulling)
             }
+            .sharedBackgroundVisibility(isCulling ? .automatic : .hidden)
         }
         .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { notification in
             guard let url = notification.object as? URL else { return }
