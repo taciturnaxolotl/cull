@@ -8,7 +8,10 @@ final class ThumbnailCache {
     private let previewCache = NSCache<NSString, NSImage>()
     private var thumbnailKeys = Set<String>()
     private var previewKeys = Set<String>()
-    private var preloadTask: Task<Void, Never>?
+    /// Previews still wanted, highest priority first. Replaced (not cancelled) when the window moves.
+    private var pendingPreviews: [(key: String, url: URL)] = []
+    private var previewWorker: Task<Void, Never>?
+    private var thumbnailSweep: Task<Void, Never>?
     /// Bumped whenever cache state changes, to trigger SwiftUI re-renders for debug overlay
     private(set) var cacheGeneration = 0
     /// Recent debug log entries (newest first), shown in debug overlay
@@ -24,7 +27,12 @@ final class ThumbnailCache {
         memoryCache.countLimit = 500
         memoryCache.totalCostLimit = 100 * 1024 * 1024 // 100 MB
 
-        previewCache.countLimit = 120
+        // Previews are full-screen bitmaps (~17 MB each at 2560px), so the byte
+        // budget is what actually bounds them. Without it NSCache purges under
+        // memory pressure at unpredictable moments and the viewer falls back to
+        // thumbnails. Keep the navigation window smaller than this budget.
+        previewCache.countLimit = 72
+        previewCache.totalCostLimit = 1024 * 1024 * 1024 // 1 GB
 
         try? FileManager.default.createDirectory(at: diskCacheURL, withIntermediateDirectories: true)
     }
@@ -69,7 +77,7 @@ final class ThumbnailCache {
         }.value
 
         if let image {
-            memoryCache.setObject(image, forKey: key as NSString)
+            memoryCache.setObject(image, forKey: key as NSString, cost: Self.cost(of: image))
             thumbnailKeys.insert(key)
         }
         return image
@@ -89,7 +97,7 @@ final class ThumbnailCache {
         }.value
 
         if let image {
-            previewCache.setObject(image, forKey: key as NSString)
+            previewCache.setObject(image, forKey: key as NSString, cost: Self.cost(of: image))
             previewKeys.insert(key)
             cacheGeneration += 1
         }
@@ -135,7 +143,7 @@ final class ThumbnailCache {
                 var batchKeys: [String] = []
                 for await (key, image) in group {
                     if let image {
-                        mc.setObject(image, forKey: key as NSString)
+                        mc.setObject(image, forKey: key as NSString, cost: Self.cost(of: image))
                         batchKeys.append(key)
                     }
                     completed += 1
@@ -149,7 +157,12 @@ final class ThumbnailCache {
         }
     }
 
+    /// Fire-and-forget thumbnail sweep, used after a filter change brings new photos into view.
+    /// Runs at background priority and stays cancellable so it can't starve preview loading:
+    /// an unbounded full-library sweep is what makes the viewer fall back to thumbnails.
     func preload(photos: [Photo]) {
+        thumbnailSweep?.cancel()
+
         let work: [(String, URL, URL)] = photos.compactMap { photo in
             let key = photo.url.absoluteString
             guard memoryCache.object(forKey: key as NSString) == nil else { return nil }
@@ -157,18 +170,21 @@ final class ThumbnailCache {
         }
         guard !work.isEmpty else { return }
 
+        log("sweep \(work.count) thumbs")
+
         let pixelSize = maxPixelSize
         let diskCache = diskCacheURL
         let mc = memoryCache
 
-        Task.detached(priority: .utility) {
+        thumbnailSweep = Task.detached(priority: .background) {
             for batchStart in stride(from: 0, to: work.count, by: 8) {
+                guard !Task.isCancelled else { return }
                 let batch = Array(work[batchStart..<min(batchStart + 8, work.count)])
-                var batchKeys: [String] = []
-                await withTaskGroup(of: (String, NSImage?).self) { group in
+                let batchKeys = await withTaskGroup(of: (String, NSImage?).self, returning: [String].self) { group in
                     for (key, loadURL, cacheKeyURL) in batch {
                         let diskPath = diskCache.appendingPathComponent(Self.stableDiskKey(for: cacheKeyURL))
                         group.addTask {
+                            guard !Task.isCancelled else { return (key, nil) }
                             if let diskImage = NSImage(contentsOf: diskPath) {
                                 return (key, diskImage)
                             }
@@ -179,13 +195,15 @@ final class ThumbnailCache {
                             return (key, extracted)
                         }
                     }
+                    var keys: [String] = []
                     for await (key, image) in group {
                         if let image {
                             // NSCache is thread-safe, no need for MainActor
-                            mc.setObject(image, forKey: key as NSString)
-                            batchKeys.append(key)
+                            mc.setObject(image, forKey: key as NSString, cost: Self.cost(of: image))
+                            keys.append(key)
                         }
                     }
+                    return keys
                 }
                 // Key tracking and generation bump must happen on MainActor
                 if !batchKeys.isEmpty {
@@ -223,7 +241,7 @@ final class ThumbnailCache {
                 }
                 for await (key, image) in group {
                     if let image {
-                        pc.setObject(image, forKey: key as NSString)
+                        pc.setObject(image, forKey: key as NSString, cost: Self.cost(of: image))
                         previewKeys.insert(key)
                         cacheGeneration += 1
                     }
@@ -236,51 +254,54 @@ final class ThumbnailCache {
         }
     }
 
-    /// Fire-and-forget: preload previews in background. Used during navigation.
-    /// Cancels previous preload to prevent cache thrashing from multiple
-    /// concurrent windows competing for the 70-entry preview cache.
+    /// Fire-and-forget: preload previews in background, nearest first.
+    ///
+    /// Calling this replaces the wanted list rather than cancelling work in flight.
+    /// Culling with a filter on moves the selection on every keypress, and the old
+    /// cancel-and-restart meant the window never finished filling — you'd land on a
+    /// photo that only had a thumbnail.
     func preloadPreviews(photos: [Photo]) {
-        preloadTask?.cancel()
-
-        let work: [(String, URL)] = photos.compactMap { photo in
+        pendingPreviews = photos.compactMap { photo in
             let key = photo.url.absoluteString
             guard previewCache.object(forKey: key as NSString) == nil else { return nil }
             return (key, photo.imageURL)
         }
-        guard !work.isEmpty else { return }
+        guard !pendingPreviews.isEmpty else { return }
 
-        log("preload \(work.count)/\(photos.count) new previews")
+        log("queue \(pendingPreviews.count)/\(photos.count) previews")
+        startPreviewWorker()
+    }
 
-        let pc = previewCache
+    /// Drains `pendingPreviews` a batch at a time. Re-reads the queue between batches,
+    /// so a window change takes effect on the next batch without losing decoded images.
+    private func startPreviewWorker() {
+        guard previewWorker == nil else { return }
 
-        preloadTask = Task.detached(priority: .utility) {
-            for batchStart in stride(from: 0, to: work.count, by: 4) {
-                guard !Task.isCancelled else { return }
-                let batch = Array(work[batchStart..<min(batchStart + 4, work.count)])
-                let batchKeys = await withTaskGroup(of: (String, NSImage?).self, returning: [String].self) { group in
+        previewWorker = Task { @MainActor [weak self] in
+            defer { self?.previewWorker = nil }
+
+            while let self, !self.pendingPreviews.isEmpty {
+                let batch = Array(self.pendingPreviews.prefix(4))
+                self.pendingPreviews.removeFirst(batch.count)
+
+                let loaded = await withTaskGroup(of: (String, NSImage?).self, returning: [(String, NSImage)].self) { group in
                     for (key, loadURL) in batch {
                         group.addTask {
-                            guard !Task.isCancelled else { return (key, nil) }
-                            return (key, Self.loadFullPreviewSync(from: loadURL))
+                            (key, Self.loadFullPreviewSync(from: loadURL))
                         }
                     }
-                    var keys: [String] = []
+                    var results: [(String, NSImage)] = []
                     for await (key, image) in group {
-                        if let image {
-                            pc.setObject(image, forKey: key as NSString)
-                            keys.append(key)
-                        }
+                        if let image { results.append((key, image)) }
                     }
-                    return keys
+                    return results
                 }
-                if !batchKeys.isEmpty {
-                    await MainActor.run { [batchKeys] in
-                        for key in batchKeys {
-                            self.previewKeys.insert(key)
-                        }
-                        self.cacheGeneration += 1
-                    }
+
+                for (key, image) in loaded {
+                    self.previewCache.setObject(image, forKey: key as NSString, cost: Self.cost(of: image))
+                    self.previewKeys.insert(key)
                 }
+                if !loaded.isEmpty { self.cacheGeneration += 1 }
             }
         }
     }
@@ -299,11 +320,12 @@ final class ThumbnailCache {
         }
     }
 
-    /// Remove thumbnails and previews for photos that are no longer visible
+    /// Remove previews for photos that are no longer visible.
+    /// Thumbnails are deliberately kept: they're small, disk-backed, and re-reading
+    /// them all after a filter toggle is expensive enough to stall preview loading.
     func evictFiltered(keeping photos: [Photo]) {
         let keepKeys = Set(photos.map { $0.url.absoluteString })
 
-        // Evict previews
         var evictedPreviews = 0
         for key in previewKeys where !keepKeys.contains(key) {
             previewCache.removeObject(forKey: key as NSString)
@@ -311,16 +333,8 @@ final class ThumbnailCache {
             evictedPreviews += 1
         }
 
-        // Evict thumbnails
-        var evictedThumbs = 0
-        for key in thumbnailKeys where !keepKeys.contains(key) {
-            memoryCache.removeObject(forKey: key as NSString)
-            thumbnailKeys.remove(key)
-            evictedThumbs += 1
-        }
-
-        if evictedPreviews > 0 || evictedThumbs > 0 {
-            log("filter evict \(evictedPreviews)p \(evictedThumbs)t")
+        if evictedPreviews > 0 {
+            log("filter evict \(evictedPreviews)p")
         }
         cacheGeneration += 1
     }
@@ -335,7 +349,12 @@ final class ThumbnailCache {
     }
 
     func stats() -> CacheStats {
-        CacheStats(
+        // NSCache can drop entries on its own under memory pressure, so the key sets
+        // drift out of date. Prune before reporting or the overlay lies about coverage.
+        previewKeys = previewKeys.filter { previewCache.object(forKey: $0 as NSString) != nil }
+        thumbnailKeys = thumbnailKeys.filter { memoryCache.object(forKey: $0 as NSString) != nil }
+
+        return CacheStats(
             thumbnailCount: thumbnailKeys.count,
             previewCount: previewKeys.count,
             previewLimit: previewCache.countLimit,
@@ -375,6 +394,12 @@ final class ThumbnailCache {
 
     // MARK: - Utilities
 
+    /// Approximate decoded size in bytes, so NSCache's byte budget means something.
+    nonisolated private static func cost(of image: NSImage) -> Int {
+        guard let rep = image.representations.first else { return 1 }
+        return max(rep.pixelsWide * rep.pixelsHigh * 4, 1)
+    }
+
     private func stableDiskKey(for url: URL) -> String {
         Self.stableDiskKey(for: url)
     }
@@ -394,6 +419,11 @@ final class ThumbnailCache {
     }
 
     func clearCache() {
+        previewWorker?.cancel()
+        previewWorker = nil
+        thumbnailSweep?.cancel()
+        thumbnailSweep = nil
+        pendingPreviews.removeAll()
         memoryCache.removeAllObjects()
         previewCache.removeAllObjects()
         thumbnailKeys.removeAll()

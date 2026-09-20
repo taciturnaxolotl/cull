@@ -8,9 +8,6 @@ struct PhotoViewer: View {
     /// Tracks what quality level is currently displayed: "preview", "thumbnail", or "none"
     @State private var displayQuality: String = "none"
 
-    private let lookaheadCount = 30
-    private let lookbehindCount = 30
-
 
     var body: some View {
         ZStack {
@@ -303,22 +300,7 @@ struct PhotoViewer: View {
 
             // Preload window: group reps prioritized over linear neighbors
             guard !Task.isCancelled, displayedPhotoID == photoID else { return }
-            let groupReps = session.adjacentGroupRepresentatives(groupCount: 15)
-            let ahead = session.photosAhead(lookaheadCount)
-            let behind = session.photosBehind(lookbehindCount)
-
-            var fanOut: [Photo] = []
-            let maxLinear = max(ahead.count, behind.count)
-            let maxGroups = groupReps.count
-            var gi = 0, li = 0
-            while gi < maxGroups || li < maxLinear {
-                if gi < maxGroups { fanOut.append(groupReps[gi]); gi += 1 }
-                if gi < maxGroups { fanOut.append(groupReps[gi]); gi += 1 }
-                if li < ahead.count { fanOut.append(ahead[li]) }
-                if li < behind.count { fanOut.append(behind[li]) }
-                li += 1
-            }
-            let window = [photo] + fanOut
+            let window = session.previewWindow()
             cache.preloadPreviews(photos: window)
             cache.evictPreviews(keeping: window)
         }
@@ -332,22 +314,7 @@ struct PhotoViewer: View {
                     displayImage = thumb
                     displayQuality = "thumbnail"
                 }
-                // Preload initial window: group reps prioritized over linear neighbors
-                let groupReps = session.adjacentGroupRepresentatives(groupCount: 15)
-                let ahead = session.photosAhead(lookaheadCount)
-                let behind = session.photosBehind(lookbehindCount)
-                var fanOut: [Photo] = []
-                let maxLinear = max(ahead.count, behind.count)
-                let maxGroups = groupReps.count
-                var gi = 0, li = 0
-                while gi < maxGroups || li < maxLinear {
-                    if gi < maxGroups { fanOut.append(groupReps[gi]); gi += 1 }
-                    if gi < maxGroups { fanOut.append(groupReps[gi]); gi += 1 }
-                    if li < ahead.count { fanOut.append(ahead[li]) }
-                    if li < behind.count { fanOut.append(behind[li]) }
-                    li += 1
-                }
-                cache.preloadPreviews(photos: [photo] + fanOut)
+                cache.preloadPreviews(photos: session.previewWindow())
             }
         }
     }

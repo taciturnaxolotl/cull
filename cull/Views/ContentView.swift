@@ -133,9 +133,14 @@ struct ContentView: View {
             session.undoManager = windowUndoManager
         }
         .onChange(of: session.filterVersion) {
-            // Evict cache entries for filtered photos, preload newly visible ones
+            // Hiding photos reshapes the preview window, so re-prime it here too.
+            // Without this, previews outside the new visible set were evicted and
+            // nothing reloaded until the selection moved — leaving the viewer on
+            // thumbnails right after a filter toggle.
             let visible = session.allPhotos.filter { !session.isPhotoFiltered($0) }
-            cache.evictFiltered(keeping: visible)
+            let window = session.previewWindow()
+            cache.evictFiltered(keeping: window)
+            cache.preloadPreviews(photos: window)
             cache.preload(photos: visible)
         }
     }
@@ -206,8 +211,8 @@ struct ContentView: View {
                     }
 
                     await MainActor.run { s.importStatus = "Loading previews..." }
-                    let ahead = Array(visiblePhotos.prefix(30))
-                    let behind = Array(visiblePhotos.suffix(30))
+                    let ahead = Array(visiblePhotos.prefix(24))
+                    let behind = Array(visiblePhotos.suffix(12))
                     let initialPreviews = ahead + behind.reversed()
                     await c.preloadAllPreviews(photos: initialPreviews) { p in
                         await MainActor.run {
@@ -296,16 +301,15 @@ struct ContentView: View {
                     }
                 }
 
-                // Rank photos within each group — best first (after analysis completes)
+                // Order photos within each group chronologically
                 for group in groups {
-                    let scored = group.photos.map { (photo: $0, score: Self.qualityScore($0, in: group)) }
-                    group.photos = scored.sorted { $0.score > $1.score }.map(\.photo)
+                    group.photos.sort { ($0.captureDate ?? .distantPast) < ($1.captureDate ?? .distantPast) }
                 }
 
-                // Preload previews in sorted order so they match browse order
+                // Preload previews in browse order
                 let sortedPhotos = groups.flatMap(\.photos)
-                let ahead = Array(sortedPhotos.prefix(30))
-                let behind = Array(sortedPhotos.suffix(30))
+                let ahead = Array(sortedPhotos.prefix(24))
+                let behind = Array(sortedPhotos.suffix(12))
                 let initialPreviews = ahead + behind.reversed()
                 await c.preloadAllPreviews(photos: initialPreviews) { p in
                     previewProgress = p
@@ -422,8 +426,8 @@ struct ContentView: View {
                     }
 
                     parallelGroup.addTask {
-                        let ahead = Array(visiblePhotos.prefix(30))
-                        let behind = Array(visiblePhotos.suffix(30))
+                        let ahead = Array(visiblePhotos.prefix(24))
+                        let behind = Array(visiblePhotos.suffix(12))
                         let initialPreviews = ahead + behind.reversed()
                         await c.preloadAllPreviews(photos: initialPreviews) { p in
                             previewProgress = p
@@ -432,10 +436,9 @@ struct ContentView: View {
                     }
                 }
 
-                // Rank photos within each group
+                // Order photos within each group chronologically
                 for group in groups {
-                    let scored = group.photos.map { (photo: $0, score: Self.qualityScore($0, in: group)) }
-                    group.photos = scored.sorted { $0.score > $1.score }.map(\.photo)
+                    group.photos.sort { ($0.captureDate ?? .distantPast) < ($1.captureDate ?? .distantPast) }
                 }
 
                 await MainActor.run {

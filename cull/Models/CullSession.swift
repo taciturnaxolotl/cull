@@ -278,6 +278,38 @@ final class CullSession {
         return result
     }
 
+    /// Photos whose full-size previews should stay resident, most urgent first.
+    ///
+    /// Group representatives are interleaved with linear neighbors so both jumping
+    /// between scenes and walking through one feel instant. Entries are deduplicated:
+    /// neighbors and representatives overlap heavily once a filter hides photos, and
+    /// duplicates used to eat window slots that real photos needed.
+    func previewWindow(lookahead: Int = 20, lookbehind: Int = 12, groupCount: Int = 10) -> [Photo] {
+        guard let current = selectedPhoto else { return [] }
+
+        let reps = adjacentGroupRepresentatives(groupCount: groupCount)
+        let ahead = photosAhead(lookahead)
+        let behind = photosBehind(lookbehind)
+
+        var window: [Photo] = [current]
+        var seen: Set<UUID> = [current.id]
+        func add(_ photo: Photo) {
+            guard seen.insert(photo.id).inserted else { return }
+            window.append(photo)
+        }
+
+        var gi = 0
+        var li = 0
+        while gi < reps.count || li < max(ahead.count, behind.count) {
+            if gi < reps.count { add(reps[gi]); gi += 1 }
+            if gi < reps.count { add(reps[gi]); gi += 1 }
+            if li < ahead.count { add(ahead[li]) }
+            if li < behind.count { add(behind[li]) }
+            li += 1
+        }
+        return window
+    }
+
     // MARK: - Culling Actions
 
     private func applyPhotoState(_ photo: Photo, rating: Int, flag: PhotoFlag, actionName: String) {
@@ -446,6 +478,11 @@ final class CullSession {
         for saved in savedPhotos {
             guard let groupID = saved.groupID, let photo = photosByPath[saved.path] else { continue }
             photosByGroup[groupID, default: []].append(photo)
+        }
+        // Photos come back in whatever order SQLite yields them, so restore
+        // chronological order to match a fresh import
+        for key in photosByGroup.keys {
+            photosByGroup[key]?.sort { ($0.captureDate ?? .distantPast) < ($1.captureDate ?? .distantPast) }
         }
 
         var rebuiltGroups: [PhotoGroup] = []
