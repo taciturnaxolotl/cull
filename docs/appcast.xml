@@ -7,7 +7,7 @@
     <language>en</language>
     <item>
       <title>Version 0.3.0</title>
-      <pubDate>Thu, 29 Oct 2026 07:55:40 +0000</pubDate>
+      <pubDate>Sun, 20 Sep 2026 03:20:46 +0000</pubDate>
       <sparkle:version>0.3.0</sparkle:version>
       <sparkle:shortVersionString>0.3.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
@@ -23,27 +23,6 @@
         url="https://github.com/taciturnaxolotl/cull/releases/download/0.3.0/Cull-0.3.0-macOS.dmg"
         sparkle:edSignature="buviJUXzMlp+tgd49OYucnaifnKi2gB6Awx/Zjad0lzyYZk35xwha510b12nusta4ETdE82IkXvsE+55o6N0BA=="
         length="4059311"
-        type="application/octet-stream"
-        sparkle:os="macos"/>
-    </item>
-    <item>
-      <title>Version 0.3.0</title>
-      <pubDate>Sun, 20 Sep 2026 03:20:46 +0000</pubDate>
-      <sparkle:version>0.3.0</sparkle:version>
-      <sparkle:shortVersionString>0.3.0</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[<h2>Zoom and pan</h2>
-<p>You can now zoom and pane around photos and stepping through a burst while zoomed in will more reliably follow the same face now as well as stepping through faces from left to right instead of the previous largest to smallest.</p>
-<p># Face detection go brrr</p>
-<p>Face detection is massively improved by using the larger original image rather than the thumbnail image.</p>
-<h2>Photos stay in order</h2>
-<p>Photos are now ordered by time rather than focus sharpness and groups should more reliably be in chronological order now.</p>
-<h2>Misc</h2>
-<p>A ton of improvements to caching which results in a much snappier feeling app; better swift ui handling of toolbars; and focus scoring has been removed as it wasn't super reliable.</p>]]></description>
-      <enclosure
-        url="https://github.com/taciturnaxolotl/cull/releases/download/0.3.0/Cull-0.3.0-macOS.dmg"
-        sparkle:edSignature="pJDn8zH2s5V0LxuNRiHTw3qtsQzESHxSUO4jaNAQHn5v+vpO8VNM2nMNLA+oJan6ujTbXvCr0nx3/NzcFOLuDw=="
-        length="4055414"
         type="application/octet-stream"
         sparkle:os="macos"/>
     </item>
